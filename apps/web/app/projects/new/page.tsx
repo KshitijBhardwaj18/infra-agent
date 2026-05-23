@@ -15,16 +15,20 @@ export default function NewProjectPage() {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       const project = await api<{ slug: string }>("/api/projects", {
         method: "POST",
         body: JSON.stringify({ name, slug }),
       });
       router.push(`/projects/${project.slug}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create project");
     } finally {
       setLoading(false);
     }
@@ -59,7 +63,13 @@ export default function NewProjectPage() {
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
-                setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
+                setSlug(
+                  e.target.value
+                    .toLowerCase()
+                    .replace(/\s+/g, "-")
+                    .replace(/[^a-z0-9-]/g, "")
+                    .replace(/^-+|-+$/g, ""),
+                );
               }}
               required
             />
@@ -73,6 +83,7 @@ export default function NewProjectPage() {
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Creating..." : "Create project"}
           </Button>
+          {error && <p className="text-sm text-red-400">{error}</p>}
         </div>
       </form>
     </div>

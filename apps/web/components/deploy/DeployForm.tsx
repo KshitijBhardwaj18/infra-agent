@@ -33,6 +33,7 @@ export function DeployForm({
   const [awsAccountId, setAwsAccountId] = useState("");
   const [awsRoleArn, setAwsRoleArn] = useState("");
   const [verifyResult, setVerifyResult] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const [envVars, setEnvVars] = useState<
     Array<{ service: string; key: string; value: string }>
   >([]);
@@ -56,15 +57,25 @@ export function DeployForm({
     setConfig((c) => ({ ...c, ...patch }));
 
   const verifyAws = async () => {
-    await api(`/api/projects/${projectId}/environments/${environmentId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ awsAccountId, awsRoleArn, region: config.region }),
-    });
-    const res = await api<{ ok: boolean; message: string }>(
-      `/api/projects/${projectId}/environments/${environmentId}/aws/verify`,
-      { method: "POST" },
-    );
-    setVerifyResult(res.message);
+    setVerifyResult(null);
+    setVerifyError(null);
+    try {
+      await api(`/api/projects/${projectId}/environments/${environmentId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ awsAccountId, awsRoleArn, region: config.region }),
+      });
+      const res = await api<{ ok: boolean; message: string }>(
+        `/api/projects/${projectId}/environments/${environmentId}/aws/verify`,
+        { method: "POST" },
+      );
+      setVerifyResult(res.message);
+    } catch (err) {
+      setVerifyError(
+        err instanceof Error
+          ? err.message
+          : "Connection failed. Check role ARN and trust policy.",
+      );
+    }
   };
 
   const deploy = async () => {
@@ -207,6 +218,7 @@ export function DeployForm({
               Test connection
             </Button>
             {verifyResult && <p className="text-sm text-green-500">{verifyResult}</p>}
+            {verifyError && <p className="text-sm text-red-400">{verifyError}</p>}
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => setStep(1)}>
                 Back

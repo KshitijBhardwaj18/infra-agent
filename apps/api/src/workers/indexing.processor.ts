@@ -88,6 +88,8 @@ export class IndexingProcessor extends WorkerHost {
         });
       }
 
+      this.indexingSse.emit(projectId, { step: "complete", data: result.config });
+
       this.gateway.emitIndexingComplete(project.organizationId, {
         projectId,
         result: result.config as HeizenConfig,
@@ -98,6 +100,13 @@ export class IndexingProcessor extends WorkerHost {
         step: "complete",
         data: { error: String(error) },
       });
+
+      this.gateway.emitIndexingComplete(project.organizationId, {
+        projectId,
+        result: null,
+        error: String(error),
+      });
+
       throw error;
     }
   }

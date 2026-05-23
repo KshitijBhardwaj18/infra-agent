@@ -157,7 +157,14 @@ export class DeploymentProcessor extends WorkerHost {
           CODEBUILD_PROJECT_NAME: environment.codebuildProjectName!,
         },
         onLog: (message, level) => {
-          const phase = message.includes("push") ? "DOCKER_PUSH" : "DOCKER_BUILD";
+          const lower = message.toLowerCase();
+          const phase =
+            lower.startsWith("docker push") ||
+            message.includes("The push refers to") ||
+            message.includes("digest: sha256") ||
+            message.includes("Pushed")
+              ? "DOCKER_PUSH"
+              : "DOCKER_BUILD";
           void this.sse.logAndEmit(deploymentId, phase as "DOCKER_BUILD", level, message);
         },
       });

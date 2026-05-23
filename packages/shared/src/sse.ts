@@ -52,7 +52,8 @@ export interface EnvironmentStatusPayload {
 
 export interface IndexingCompletePayload {
   projectId: string;
-  result: HeizenConfig;
+  result: HeizenConfig | null;
+  error?: string;
 }
 
 export interface AgentChatSsePayload {

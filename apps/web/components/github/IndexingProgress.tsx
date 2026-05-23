@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Circle, Loader2 } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { IndexingSsePayload } from "@heizen/shared";
 
@@ -15,7 +15,15 @@ const STEPS = [
 export function IndexingProgress({ events }: { events: IndexingSsePayload[] }) {
   const completedSteps = new Set(events.map((e) => e.step));
   const currentStep = events[events.length - 1]?.step;
-  const isComplete = completedSteps.has("complete");
+  const completeEvent = events.find((e) => e.step === "complete");
+  const completeError =
+    completeEvent?.data &&
+    typeof completeEvent.data === "object" &&
+    completeEvent.data !== null &&
+    "error" in completeEvent.data
+      ? String((completeEvent.data as { error: unknown }).error)
+      : null;
+  const isComplete = completedSteps.has("complete") && !completeError;
 
   return (
     <div className="mx-auto mt-16 max-w-sm rounded-lg border border-zinc-800 bg-zinc-900 p-5">
@@ -24,14 +32,17 @@ export function IndexingProgress({ events }: { events: IndexingSsePayload[] }) {
 
       <div className="mt-6 space-y-3">
         {STEPS.map((step) => {
+          const failed = step.key === "complete" && !!completeError;
           const done =
             completedSteps.has(step.key as IndexingSsePayload["step"]) &&
             (step.key !== "complete" || isComplete);
-          const active = currentStep === step.key && !isComplete;
+          const active = currentStep === step.key && !isComplete && !failed;
 
           return (
             <div key={step.key} className="flex items-center gap-3">
-              {done ? (
+              {failed ? (
+                <XCircle size={16} className="shrink-0 text-red-500" />
+              ) : done ? (
                 <CheckCircle2 size={16} className="shrink-0 text-green-500" />
               ) : active ? (
                 <Loader2 size={16} className="shrink-0 animate-spin text-blue-500" />
@@ -41,16 +52,21 @@ export function IndexingProgress({ events }: { events: IndexingSsePayload[] }) {
               <span
                 className={cn(
                   "text-sm",
-                  done || active ? "text-white" : "text-zinc-600",
+                  failed ? "text-red-400" : done || active ? "text-white" : "text-zinc-600",
                   active && "animate-pulse",
                 )}
               >
-                {step.label}
+                {failed ? "Failed" : step.label}
               </span>
             </div>
           );
         })}
       </div>
+      {completeError && (
+        <p className="mt-4 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          {completeError}
+        </p>
+      )}
     </div>
   );
 }

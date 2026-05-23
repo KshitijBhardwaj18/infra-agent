@@ -91,6 +91,7 @@ function EnvironmentPageContent({
   const [project, setProject] = useState<Project | null>(null);
   const [environment, setEnvironment] = useState<Environment | null>(null);
   const [indexing, setIndexing] = useState(false);
+  const [indexingError, setIndexingError] = useState<string | null>(null);
   const [showDeployForm, setShowDeployForm] = useState(false);
   const [resources, setResources] = useState<
     Array<{ id: string; pulumiUrn: string; type: string; name: string; dependencies: string[] }>
@@ -142,7 +143,12 @@ function EnvironmentPageContent({
   useIndexingComplete((payload) => {
     if (payload.projectId === project?.id) {
       setIndexing(false);
-      load(projectSlug, envType);
+      if (payload.error) {
+        setIndexingError(payload.error);
+      } else {
+        setIndexingError(null);
+        load(projectSlug, envType);
+      }
     }
   });
 
@@ -166,6 +172,7 @@ function EnvironmentPageContent({
 
   const startIndexing = async () => {
     if (!project || !environment) return;
+    setIndexingError(null);
     setIndexing(true);
     resetIndexEvents();
     await api(`/api/projects/${project.id}/github/index`, {
@@ -191,6 +198,7 @@ function EnvironmentPageContent({
         installationId={project.githubInstallationId}
         environmentId={environment.id}
         onRepoConnected={() => {
+          setIndexingError(null);
           setIndexing(true);
           resetIndexEvents();
           void load(projectSlug, envType);
@@ -200,7 +208,28 @@ function EnvironmentPageContent({
   }
 
   if (indexing) {
-    return <IndexingProgress events={indexEvents} />;
+    return (
+      <div className="mx-auto mt-16 max-w-sm">
+        <IndexingProgress events={indexEvents} />
+        {indexingError && (
+          <p className="mt-4 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400">
+            {indexingError}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (indexingError) {
+    return (
+      <div className="flex h-full min-h-[480px] items-center justify-center p-8">
+        <div className="max-w-sm text-center">
+          <h2 className="mb-2 text-base font-semibold">Indexing failed</h2>
+          <p className="mb-6 text-sm text-red-400">{indexingError}</p>
+          <Button onClick={startIndexing}>Try again</Button>
+        </div>
+      </div>
+    );
   }
 
   if (environment.status === "DEPLOYING") {

@@ -35,7 +35,7 @@ Relevant file contents:
 Dockerfile: ${files.dockerfile?.slice(0, 2000) ?? "none"}
 Root package.json: ${JSON.stringify(files.rootPackageJson)?.slice(0, 1000) ?? "none"}
 App package.jsons: ${JSON.stringify(files.appPackageJsons.map((a) => ({ app: a.app, scripts: a.content.scripts, deps: a.content.dependencies })))}
-Env examples: ${JSON.stringify(files.appEnvExamples.map((e) => ({ app: e.app, keys: e.content.split("\\n").filter((l) => l.includes("=")).map((l) => l.split("=")[0]) })))}
+Env examples: ${JSON.stringify(files.appEnvExamples.map((e) => ({ app: e.app, keys: e.content.split("\n").filter((l: string) => l.includes("=")).map((l: string) => l.split("=")[0]) })))}
 
 Project name: ${projectName}
 Environment: ${env}`;
