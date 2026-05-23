@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { Suspense, useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, FolderGit2, Rocket, Activity } from "lucide-react";
 import { ProjectCard } from "@/components/dashboard/ProjectCard";
+import { GitHubInstallError } from "@/components/github/GitHubInstallError";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSession } from "@/lib/auth-client";
@@ -85,6 +86,10 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl p-6">
+      <Suspense>
+        <GitHubInstallError />
+      </Suspense>
+
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-base font-semibold">

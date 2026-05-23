@@ -1,7 +1,10 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  HttpException,
+  Logger,
   Param,
   Post,
   Query,
@@ -19,8 +22,23 @@ import { GithubService } from "./github.service";
 import { IndexingSseService } from "./indexing-sse.service";
 import type { IndexingSsePayload } from "@heizen/shared";
 
+function getErrorMessage(err: unknown): string {
+  if (err instanceof HttpException) {
+    const response = err.getResponse();
+    if (typeof response === "string") return response;
+    if (typeof response === "object" && response && "message" in response) {
+      const msg = (response as { message: string | string[] }).message;
+      return Array.isArray(msg) ? msg.join(", ") : msg;
+    }
+  }
+  if (err instanceof Error) return err.message;
+  return "unknown";
+}
+
 @Controller("api")
 export class GithubController {
+  private readonly logger = new Logger(GithubController.name);
+
   constructor(
     private readonly github: GithubService,
     private readonly indexingSse: IndexingSseService,
@@ -30,6 +48,38 @@ export class GithubController {
   @UseGuards(AuthGuard)
   install(@Res() res: Response, @Query("projectId") projectId: string) {
     return res.redirect(this.github.getInstallUrl(projectId ?? ""));
+  }
+
+  @Post("github/install-complete")
+  @UseGuards(AuthGuard)
+  async completeInstall(
+    @CurrentUser() user: { id: string },
+    @Body() body: { installationId: string; state: string },
+  ) {
+    if (!body?.installationId) {
+      throw new BadRequestException("installationId is required");
+    }
+    if (!body?.state) {
+      throw new BadRequestException("state is required");
+    }
+
+    let projectId: string;
+    try {
+      const decoded = JSON.parse(Buffer.from(body.state, "base64").toString()) as {
+        projectId: string;
+      };
+      projectId = decoded.projectId;
+    } catch {
+      throw new BadRequestException("Invalid state parameter");
+    }
+
+    if (!projectId) {
+      throw new BadRequestException("state did not contain a projectId");
+    }
+
+    this.logger.log(`Completing GitHub install for project ${projectId} (user ${user.id})`);
+    const project = await this.github.handleCallback(user.id, projectId, body.installationId);
+    return { slug: project.slug, id: project.id };
   }
 
   @Get("github/callback")
@@ -59,8 +109,15 @@ export class GithubController {
     try {
       const project = await this.github.handleCallback(user.id, projectId, installationId);
       return res.redirect(`${origin}/projects/${project.slug}`);
-    } catch {
-      return res.redirect(`${origin}/dashboard?error=github_install_failed`);
+    } catch (err) {
+      const message = getErrorMessage(err);
+      this.logger.error(`GitHub callback failed: ${message}`, err instanceof Error ? err.stack : undefined);
+      const reason = encodeURIComponent(message);
+      const slug = await this.github.getProjectSlug(projectId);
+      const base = slug
+        ? `${origin}/projects/${slug}/staging`
+        : `${origin}/dashboard`;
+      return res.redirect(`${base}?error=github_install_failed&reason=${reason}`);
     }
   }
 

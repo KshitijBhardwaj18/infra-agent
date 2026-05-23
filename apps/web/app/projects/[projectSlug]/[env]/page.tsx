@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Copy, Check, ExternalLink } from "lucide-react";
 import type { HeizenConfig } from "@heizen/shared";
 import { ConnectGitHub } from "@/components/github/ConnectGitHub";
+import { GitHubInstallError } from "@/components/github/GitHubInstallError";
 import { IndexingProgress } from "@/components/github/IndexingProgress";
 import { IndexingResults } from "@/components/indexing/IndexingResults";
 import { DeployForm } from "@/components/deploy/DeployForm";
@@ -201,17 +202,20 @@ function EnvironmentPageContent({
 
   if (!project.githubOwner) {
     return (
-      <ConnectGitHub
-        projectId={project.id}
-        installationId={project.githubInstallationId}
-        environmentId={environment.id}
-        onRepoConnected={() => {
-          setIndexingError(null);
-          setIndexing(true);
-          resetIndexEvents();
-          void load(projectSlug, envType);
-        }}
-      />
+      <div className="mx-auto max-w-5xl p-6">
+        <GitHubInstallError />
+        <ConnectGitHub
+          projectId={project.id}
+          installationId={project.githubInstallationId}
+          environmentId={environment.id}
+          onRepoConnected={() => {
+            setIndexingError(null);
+            setIndexing(true);
+            resetIndexEvents();
+            void load(projectSlug, envType);
+          }}
+        />
+      </div>
     );
   }
 

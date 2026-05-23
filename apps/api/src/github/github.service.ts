@@ -33,17 +33,31 @@ export class GithubService {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
     });
-    if (!project) throw new NotFoundException("Project not found");
+    if (!project) {
+      throw new NotFoundException(`Project not found: ${projectId}`);
+    }
 
     const member = await this.prisma.member.findFirst({
       where: { userId, organizationId: project.organizationId },
     });
-    if (!member) throw new ForbiddenException("Not authorized for this project");
+    if (!member) {
+      throw new ForbiddenException(
+        `User ${userId} is not a member of org ${project.organizationId}`,
+      );
+    }
 
     return this.prisma.project.update({
       where: { id: projectId },
       data: { githubInstallationId: installationId },
     });
+  }
+
+  async getProjectSlug(projectId: string): Promise<string | null> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { slug: true },
+    });
+    return project?.slug ?? null;
   }
 
   async listRepos(orgId: string, projectId: string) {

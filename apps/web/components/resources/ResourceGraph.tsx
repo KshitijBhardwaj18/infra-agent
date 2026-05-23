@@ -22,10 +22,11 @@ interface StackResource {
   dependencies: string[];
 }
 
-interface ResourceNodeData {
+type ResourceNodeData = {
   label: string;
   sublabel: string;
-}
+  [key: string]: unknown;
+};
 
 function ResourceNode({ data }: NodeProps<Node<ResourceNodeData>>) {
   return (
