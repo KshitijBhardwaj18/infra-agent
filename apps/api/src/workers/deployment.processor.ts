@@ -119,6 +119,13 @@ export class DeploymentProcessor extends WorkerHost {
         environment.setupComplete = true;
       }
 
+      const accountId =
+        environment.awsAccountId ??
+        environment.ecrUri?.split(".")[0] ??
+        "";
+      const ecrRegistry = `${accountId}.dkr.ecr.${environment.region!}.amazonaws.com`;
+      const ecrRepo = `heizen-${project.slug}-${envType}`;
+
       // 3. Update status → BUILDING
       await this.prisma.deployment.update({
         where: { id: deploymentId },
@@ -133,9 +140,6 @@ export class DeploymentProcessor extends WorkerHost {
       // 5. Start CodeBuild
       const commitSha = deployment.commitSha ?? "HEAD";
       const imageTag = commitSha.slice(0, 7);
-      const accountId = environment.awsAccountId ?? environment.ecrUri?.split(".")[0] ?? "";
-      const ecrRegistry = `${accountId}.dkr.ecr.${environment.region}.amazonaws.com`;
-      const ecrRepo = `heizen-${project.slug}-${envType}`;
 
       await startBuildAndStream({
         projectName: environment.codebuildProjectName!,

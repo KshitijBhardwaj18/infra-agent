@@ -388,11 +388,14 @@ function EnvironmentPageContent({
   }
 
   return (
-    <div className="mx-auto flex min-h-[400px] max-w-5xl flex-col items-center justify-center p-6 text-center">
-      <p className="text-sm text-muted-foreground">Repository connected. Ready to analyze.</p>
-      <Button size="sm" className="mt-4" onClick={startIndexing}>
-        Analyze codebase
-      </Button>
+    <div className="flex h-full min-h-[480px] items-center justify-center p-8">
+      <div className="max-w-sm text-center">
+        <h2 className="mb-2 text-base font-semibold">Repository connected</h2>
+        <p className="mb-6 text-sm text-muted-foreground">
+          Ready to analyse your codebase and detect your infrastructure needs.
+        </p>
+        <Button onClick={startIndexing}>Analyse Codebase</Button>
+      </div>
     </div>
   );
 }

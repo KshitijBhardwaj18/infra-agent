@@ -37,6 +37,7 @@ export function DeployForm({
     Array<{ service: string; key: string; value: string }>
   >([]);
   const [deploying, setDeploying] = useState(false);
+  const [deployError, setDeployError] = useState<string | null>(null);
 
   useEffect(() => {
     api<
@@ -67,7 +68,19 @@ export function DeployForm({
   };
 
   const deploy = async () => {
+    if (!awsRoleArn.trim()) {
+      setDeployError("IAM Role ARN is required. Fill it in Step 2.");
+      setStep(2);
+      return;
+    }
+    if (!config.region.trim()) {
+      setDeployError("AWS region is required.");
+      setStep(1);
+      return;
+    }
+
     setDeploying(true);
+    setDeployError(null);
     try {
       await api(`/api/projects/${projectId}/environments/${environmentId}`, {
         method: "PATCH",
@@ -92,6 +105,10 @@ export function DeployForm({
         { method: "POST", body: JSON.stringify({}) },
       );
       onDeploy(deployment.id);
+    } catch (err) {
+      setDeployError(
+        err instanceof Error ? err.message : "Deployment failed. Check your configuration.",
+      );
     } finally {
       setDeploying(false);
     }
@@ -259,6 +276,7 @@ export function DeployForm({
                 {deploying ? "Deploying..." : `Deploy to ${envType}`}
               </Button>
             </div>
+            {deployError && <p className="text-sm text-red-400">{deployError}</p>}
           </div>
         )}
       </Card>
