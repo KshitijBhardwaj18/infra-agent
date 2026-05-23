@@ -84,15 +84,69 @@ async function detectExisting(
   return { ecrExists, roleExists, rolePolicyExists, projectExists };
 }
 
+const CODEBUILD_IGNORE_CHANGES = [
+  "environment",
+  "logsConfig",
+  "tags",
+  "buildTimeout",
+  "cache",
+  "encryptionKey",
+  "badgeEnabled",
+  "queuedTimeout",
+  "artifacts",
+  "source",
+];
+
+async function getManagedResourceTypes(
+  stackName: string,
+  projectName: string,
+  envVars: Record<string, string>,
+): Promise<Set<string>> {
+  try {
+    const stack = await automation.LocalWorkspace.selectStack(
+      {
+        stackName,
+        projectName,
+        program: async () => ({}),
+      },
+      { envVars },
+    );
+    const exported = await stack.exportStack();
+    const types = new Set<string>();
+    for (const resource of exported.deployment?.resources ?? []) {
+      if (resource.type) types.add(resource.type);
+    }
+    return types;
+  } catch {
+    return new Set();
+  }
+}
+
+function resolveImportFlags(
+  awsExisting: ExistingResources,
+  managedTypes: Set<string>,
+): ExistingResources {
+  return {
+    ecrExists:
+      awsExisting.ecrExists && !managedTypes.has("aws:ecr/repository"),
+    roleExists: awsExisting.roleExists && !managedTypes.has("aws:iam/role"),
+    rolePolicyExists:
+      awsExisting.rolePolicyExists && !managedTypes.has("aws:iam/rolePolicy"),
+    projectExists:
+      awsExisting.projectExists && !managedTypes.has("aws:codebuild/project"),
+  };
+}
+
 function createSetupProgram(opts: {
   ecrRepoName: string;
   roleName: string;
   projectName: string;
   region: string;
-  existing: ExistingResources;
+  awsExisting: ExistingResources;
+  importFlags: ExistingResources;
 }) {
   return async () => {
-    const { existing } = opts;
+    const { awsExisting, importFlags } = opts;
 
     const ecr = new aws.ecr.Repository(
       "ecr",
@@ -102,8 +156,8 @@ function createSetupProgram(opts: {
         forceDelete: true,
       },
       {
-        import: existing.ecrExists ? opts.ecrRepoName : undefined,
-        ignoreChanges: existing.ecrExists
+        import: importFlags.ecrExists ? opts.ecrRepoName : undefined,
+        ignoreChanges: awsExisting.ecrExists
           ? ["imageScanningConfiguration", "forceDelete", "tags"]
           : [],
       },
@@ -125,8 +179,8 @@ function createSetupProgram(opts: {
         }),
       },
       {
-        import: existing.roleExists ? opts.roleName : undefined,
-        ignoreChanges: existing.roleExists ? ["assumeRolePolicy", "tags"] : [],
+        import: importFlags.roleExists ? opts.roleName : undefined,
+        ignoreChanges: awsExisting.roleExists ? ["assumeRolePolicy", "tags"] : [],
       },
     );
 
@@ -165,10 +219,10 @@ function createSetupProgram(opts: {
         }),
       },
       {
-        import: existing.rolePolicyExists
+        import: importFlags.rolePolicyExists
           ? `${opts.roleName}:${opts.roleName}-policy`
           : undefined,
-        ignoreChanges: existing.rolePolicyExists ? ["policy"] : [],
+        ignoreChanges: awsExisting.rolePolicyExists ? ["policy"] : [],
       },
     );
 
@@ -201,10 +255,8 @@ function createSetupProgram(opts: {
         },
       },
       {
-        import: existing.projectExists ? opts.projectName : undefined,
-        ignoreChanges: existing.projectExists
-          ? ["environment", "logsConfig", "tags", "buildTimeout"]
-          : [],
+        import: importFlags.projectExists ? opts.projectName : undefined,
+        ignoreChanges: awsExisting.projectExists ? CODEBUILD_IGNORE_CHANGES : [],
       },
     );
 
@@ -219,26 +271,35 @@ function createSetupProgram(opts: {
 export async function runSetupStack(
   opts: SetupStackOptions,
 ): Promise<SetupStackOutputs> {
-  const existing = await detectExisting(
+  const creds = {
+    accessKeyId: opts.awsCreds.accessKeyId,
+    secretAccessKey: opts.awsCreds.secretAccessKey,
+    sessionToken: opts.awsCreds.sessionToken,
+  };
+
+  const awsExisting = await detectExisting(
     opts.ecrRepoName,
     opts.roleName,
     opts.projectName,
     opts.region,
-    {
-      accessKeyId: opts.awsCreds.accessKeyId,
-      secretAccessKey: opts.awsCreds.secretAccessKey,
-      sessionToken: opts.awsCreds.sessionToken,
-    },
+    creds,
   );
 
   const envVars: Record<string, string> = {
-    AWS_ACCESS_KEY_ID: opts.awsCreds.accessKeyId,
-    AWS_SECRET_ACCESS_KEY: opts.awsCreds.secretAccessKey,
-    AWS_SESSION_TOKEN: opts.awsCreds.sessionToken,
+    AWS_ACCESS_KEY_ID: creds.accessKeyId,
+    AWS_SECRET_ACCESS_KEY: creds.secretAccessKey,
+    AWS_SESSION_TOKEN: creds.sessionToken,
     AWS_DEFAULT_REGION: opts.region,
     PULUMI_BACKEND_URL: `s3://${opts.backendBucket}`,
     PULUMI_CONFIG_PASSPHRASE: opts.passphrase,
   };
+
+  const managedTypes = await getManagedResourceTypes(
+    opts.stackName,
+    opts.stackName,
+    envVars,
+  );
+  const importFlags = resolveImportFlags(awsExisting, managedTypes);
 
   const stack = await automation.LocalWorkspace.createOrSelectStack(
     {
@@ -249,7 +310,8 @@ export async function runSetupStack(
         roleName: opts.roleName,
         projectName: opts.projectName,
         region: opts.region,
-        existing,
+        awsExisting,
+        importFlags,
       }),
     },
     { envVars },
