@@ -67,24 +67,47 @@ export class GithubService {
     }
 
     const token = await this.tokenService.getToken(project.githubInstallationId);
-    const res = await fetch("https://api.github.com/installation/repositories", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-      },
-    });
+    const repositories: Array<{
+      full_name: string;
+      name: string;
+      owner: { login: string };
+      default_branch: string;
+    }> = [];
 
-    if (!res.ok) throw new BadRequestException("Failed to list repositories");
-    const data = (await res.json()) as {
-      repositories: Array<{ full_name: string; name: string; owner: { login: string }; default_branch: string }>;
-    };
+    let url: string | null =
+      "https://api.github.com/installation/repositories?per_page=100&page=1";
 
-    return data.repositories.map((r) => ({
-      fullName: r.full_name,
-      name: r.name,
-      owner: r.owner.login,
-      defaultBranch: r.default_branch,
-    }));
+    while (url) {
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        },
+      });
+
+      if (!res.ok) throw new BadRequestException("Failed to list repositories");
+
+      const data = (await res.json()) as {
+        repositories: Array<{
+          full_name: string;
+          name: string;
+          owner: { login: string };
+          default_branch: string;
+        }>;
+      };
+
+      repositories.push(...data.repositories);
+      url = getNextGitHubPageUrl(res.headers.get("link"));
+    }
+
+    return repositories
+      .map((r) => ({
+        fullName: r.full_name,
+        name: r.name,
+        owner: r.owner.login,
+        defaultBranch: r.default_branch,
+      }))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
   }
 
   async connect(
@@ -142,4 +165,15 @@ export class GithubService {
     if (!env) throw new NotFoundException("Environment not found");
     return { heizenConfig: env.heizenConfig, environmentId: env.id };
   }
+}
+
+function getNextGitHubPageUrl(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+
+  for (const part of linkHeader.split(",")) {
+    const match = part.match(/<([^>]+)>;\s*rel="next"/);
+    if (match) return match[1];
+  }
+
+  return null;
 }

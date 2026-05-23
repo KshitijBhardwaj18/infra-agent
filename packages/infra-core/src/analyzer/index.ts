@@ -4,8 +4,9 @@ import * as path from "path";
 import type { AnalyzerResult } from "../types/config";
 import { shallowClone } from "./clone";
 import { collectFiles } from "./collect";
+import { buildConfigFromStatic } from "./config-builder";
 import { staticAnalysis } from "./static";
-import { analyzeWithLlm } from "./llm";
+import { classifyEnvVarsWithLlm } from "./llm";
 
 export type IndexingStepCallback = (step: string, data?: unknown) => void;
 
@@ -36,7 +37,9 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzerResult> 
     const staticResult = staticAnalysis(files);
 
     onStep?.("analyzing");
-    const result = await analyzeWithLlm(files, staticResult, projectName, env);
+    const config = buildConfigFromStatic(staticResult, projectName, env);
+    const envVars = await classifyEnvVarsWithLlm(files, staticResult);
+    const result = { config, envVars };
 
     onStep?.("complete", result);
     return result;

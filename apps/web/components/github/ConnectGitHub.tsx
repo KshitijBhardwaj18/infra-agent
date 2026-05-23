@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Search } from "lucide-react";
 import { GitHubIcon } from "@/components/icons/GitHubIcon";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, apiUrl } from "@/lib/api";
 
@@ -27,6 +29,18 @@ export function ConnectGitHub({
   const [repos, setRepos] = useState<Repo[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filteredRepos = useMemo(() => {
+    if (!query.trim()) return repos;
+    const q = query.toLowerCase();
+    return repos.filter(
+      (repo) =>
+        repo.fullName.toLowerCase().includes(q) ||
+        repo.name.toLowerCase().includes(q) ||
+        repo.owner.toLowerCase().includes(q),
+    );
+  }, [repos, query]);
 
   useEffect(() => {
     if (!installationId) return;
@@ -111,23 +125,43 @@ export function ConnectGitHub({
         )}
 
         {!loadingRepos && repos.length > 0 && (
-          <div className="space-y-2">
-            {repos.map((repo) => (
-              <button
-                key={repo.fullName}
-                type="button"
-                onClick={() => connect(repo)}
-                disabled={connecting}
-                className="flex w-full cursor-pointer items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3 text-left transition-colors hover:border-zinc-700 disabled:opacity-50"
-              >
-                <div>
-                  <p className="text-sm font-medium">{repo.fullName}</p>
-                  <p className="text-xs text-muted-foreground">{repo.defaultBranch}</p>
-                </div>
-                <GitHubIcon size={14} className="text-zinc-500" />
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="relative mb-4">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search repositories..."
+                className="pl-9"
+              />
+            </div>
+
+            {filteredRepos.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-zinc-800 py-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  No repositories match &ldquo;{query}&rdquo;.
+                </p>
+              </div>
+            ) : (
+              <div className="max-h-80 space-y-2 overflow-y-auto">
+                {filteredRepos.map((repo) => (
+                  <button
+                    key={repo.fullName}
+                    type="button"
+                    onClick={() => connect(repo)}
+                    disabled={connecting}
+                    className="flex w-full cursor-pointer items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3 text-left transition-colors hover:border-zinc-700 disabled:opacity-50"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{repo.fullName}</p>
+                      <p className="text-xs text-muted-foreground">{repo.defaultBranch}</p>
+                    </div>
+                    <GitHubIcon size={14} className="text-zinc-500" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

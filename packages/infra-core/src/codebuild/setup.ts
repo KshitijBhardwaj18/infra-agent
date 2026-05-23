@@ -13,6 +13,7 @@ import {
   CodeBuildClient,
   CreateProjectCommand,
   UpdateProjectCommand,
+  BatchGetProjectsCommand,
 } from "@aws-sdk/client-codebuild";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { BUILDSPEC } from "./buildspec";
@@ -153,10 +154,21 @@ export async function ensureCodeBuildProject(
     },
   };
 
+  const existingProjects = await codebuild.send(
+    new BatchGetProjectsCommand({ names: [projectName] }),
+  );
+  const projectExists = (existingProjects.projects?.length ?? 0) > 0;
+
   try {
-    await codebuild.send(new CreateProjectCommand(projectConfig));
-  } catch {
-    await codebuild.send(new UpdateProjectCommand(projectConfig));
+    if (projectExists) {
+      await codebuild.send(new UpdateProjectCommand(projectConfig));
+    } else {
+      await codebuild.send(new CreateProjectCommand(projectConfig));
+    }
+  } catch (error) {
+    const action = projectExists ? "update" : "create";
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to ${action} CodeBuild project "${projectName}": ${message}`);
   }
 
   return { ecrUri, codebuildProjectName: projectName, roleArn };

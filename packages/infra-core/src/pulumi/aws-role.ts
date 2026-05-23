@@ -1,4 +1,5 @@
 import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
+import { getPlatformAwsCredentials } from "./platform-credentials";
 
 export interface AwsCredentials {
   accessKeyId: string;
@@ -12,7 +13,11 @@ export async function assumeCustomerRole(
   externalId: string,
   region: string,
 ): Promise<AwsCredentials> {
-  const sts = new STSClient({ region });
+  const platformCreds = getPlatformAwsCredentials();
+  const sts = new STSClient({
+    region,
+    credentials: platformCreds,
+  });
 
   const result = await sts.send(
     new AssumeRoleCommand({

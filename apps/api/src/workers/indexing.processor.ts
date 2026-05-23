@@ -95,16 +95,22 @@ export class IndexingProcessor extends WorkerHost {
         result: result.config as HeizenConfig,
       });
     } catch (error) {
-      this.logger.error(`Indexing failed for project ${projectId}`, error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : "Unknown indexing error";
+      this.logger.error(`Indexing failed for project ${projectId}`, message);
       this.indexingSse.emit(projectId, {
         step: "complete",
-        data: { error: String(error) },
+        data: { error: message },
       });
 
       this.gateway.emitIndexingComplete(project.organizationId, {
         projectId,
         result: null,
-        error: String(error),
+        error: message,
       });
 
       throw error;

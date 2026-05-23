@@ -1,50 +1,68 @@
 import { generateObject } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { analyzerResultSchema } from "../types/config";
-import type { AnalyzerResult } from "../types/config";
+import { z } from "zod";
+import { analyzerEnvVarSchema } from "../types/config";
+import type { AnalyzerEnvVar } from "../types/config";
 import type { CollectedFiles } from "./collect";
+import { classifyEnvVarsRuleBased } from "./env-vars";
 import type { StaticAnalysis } from "./static";
 
-export async function analyzeWithLlm(
+const envVarsSchema = z.object({
+  envVars: z.array(analyzerEnvVarSchema),
+});
+
+export async function classifyEnvVarsWithLlm(
   files: CollectedFiles,
   staticResult: StaticAnalysis,
-  projectName: string,
-  env: "staging" | "production",
-): Promise<AnalyzerResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY must be set");
+): Promise<AnalyzerEnvVar[]> {
+  const fallback = classifyEnvVarsRuleBased(staticResult);
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return fallback;
   }
 
-  const prompt = `You are analyzing a codebase to produce a HeizenConfig for AWS deployment.
+  const prompt = `Classify environment variables for AWS deployment.
 
 Rules:
-- packages/* directories are libraries, NOT services. Only apps/* with a "start" script are services.
-- Workers (bullmq) have no port.
-- Classify each env var as "auto_generated" (DATABASE_URL, REDIS_URL, AWS_S3_BUCKET, NODE_ENV) or "needs_user_input" (secrets, API keys).
-- Use sensible defaults for CPU/scaling based on env type (${env}).
-- Set database.engine to "postgres" if postgres deps detected, else "none".
-- Set cache.engine to "redis" if redis deps detected, else "none".
-- Set storage.enabled to true if s3 deps detected, else false.
-- loadBalancer.enabled should be true if any frontend service exists.
+- Mark as "auto_generated": DATABASE_URL, REDIS_URL, AWS_S3_BUCKET, NODE_ENV, AWS_REGION
+- Mark as "needs_user_input": secrets, API keys, third-party tokens, and anything user-specific
+- Return one entry per service/key pair from the detected list below
+- Do not invent env vars that are not listed
 
-Static analysis result:
-${JSON.stringify(staticResult, null, 2)}
+Detected services and env keys:
+${JSON.stringify(
+  staticResult.services.map((service) => ({
+    service: service.name,
+    keys: service.envKeys,
+  })),
+  null,
+  2,
+)}
 
-Relevant file contents:
-Dockerfile: ${files.dockerfile?.slice(0, 2000) ?? "none"}
-Root package.json: ${JSON.stringify(files.rootPackageJson)?.slice(0, 1000) ?? "none"}
-App package.jsons: ${JSON.stringify(files.appPackageJsons.map((a) => ({ app: a.app, scripts: a.content.scripts, deps: a.content.dependencies })))}
-Env examples: ${JSON.stringify(files.appEnvExamples.map((e) => ({ app: e.app, keys: e.content.split("\n").filter((l: string) => l.includes("=")).map((l: string) => l.split("=")[0]) })))}
+Env example key lists:
+${JSON.stringify(
+  files.appEnvExamples.map((example) => ({
+    app: example.app,
+    keys: example.content
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .map((line) => line.split("=")[0]?.trim())
+      .filter(Boolean),
+  })),
+  null,
+  2,
+)}`;
 
-Project name: ${projectName}
-Environment: ${env}`;
+  try {
+    const { object } = await generateObject({
+      model: anthropic("claude-haiku-4-5"),
+      schema: envVarsSchema,
+      prompt,
+    });
 
-  const { object } = await generateObject({
-    model: anthropic("claude-haiku-4-5"),
-    schema: analyzerResultSchema,
-    prompt,
-  });
-
-  return object;
+    return object.envVars.length > 0 ? object.envVars : fallback;
+  } catch {
+    return fallback;
+  }
 }

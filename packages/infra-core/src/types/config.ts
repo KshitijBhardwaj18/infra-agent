@@ -15,6 +15,7 @@ export type {
 export {
   heizenConfigSchema,
   analyzerResultSchema,
+  analyzerEnvVarSchema,
   serviceConfigSchema,
 } from "@heizen/shared";
 

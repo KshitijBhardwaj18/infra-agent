@@ -69,6 +69,11 @@ export class DeploymentProcessor extends WorkerHost {
 
       const envType = environment.type === "PRODUCTION" ? "production" : "staging";
       const prefix = `${project.slug}-${envType}`;
+      const stateBucket = `heizen-${project.slug}-${envType}-state`;
+      const ecrRepoName = `heizen-${project.slug}-${envType}`;
+      const roleName = `heizen-${project.slug}-${envType}-codebuild-role`;
+      const codebuildProjectName =
+        environment.codebuildProjectName ?? `heizen-${project.slug}-${envType}`;
 
       // 1. Assume customer AWS role
       await this.sse.logAndEmit(deploymentId, "SYSTEM", "info", "Assuming AWS role...");
@@ -78,44 +83,47 @@ export class DeploymentProcessor extends WorkerHost {
         environment.region,
       );
 
-      // 2. First-time setup
+      // 2. First-time setup (Pulumi state bucket)
       if (!environment.setupComplete) {
         await this.sse.logAndEmit(deploymentId, "SYSTEM", "info", "Running first-time infrastructure setup...");
-
-        const stateBucket = `heizen-${project.slug}-${envType}-state`;
-        const ecrRepoName = `heizen-${project.slug}-${envType}`;
-        const roleName = `heizen-${project.slug}-${envType}-codebuild-role`;
-        const codebuildProjectName = `heizen-${project.slug}-${envType}`;
 
         const s3 = new S3Client({
           region: environment.region,
           credentials: awsCreds,
         });
         await ensureStateBucket(s3, stateBucket, environment.region);
+      }
 
-        const setup = await ensureCodeBuildProject({
-          projectName: codebuildProjectName,
-          ecrRepoName,
-          roleName,
-          region: environment.region,
-          awsCreds,
-        });
+      // 3. Ensure CodeBuild project + ECR exist (idempotent, runs every deploy)
+      await this.sse.logAndEmit(deploymentId, "SYSTEM", "info", "Ensuring CodeBuild project...");
+      const setup = await ensureCodeBuildProject({
+        projectName: codebuildProjectName,
+        ecrRepoName,
+        roleName,
+        region: environment.region,
+        awsCreds,
+      });
 
+      if (
+        !environment.setupComplete ||
+        environment.ecrUri !== setup.ecrUri ||
+        environment.codebuildProjectName !== setup.codebuildProjectName
+      ) {
         await this.prisma.environment.update({
           where: { id: environmentId },
           data: {
             ecrUri: setup.ecrUri,
             codebuildProjectName: setup.codebuildProjectName,
-            pulumiBackendBucket: stateBucket,
-            pulumiStackName: prefix,
+            pulumiBackendBucket: environment.pulumiBackendBucket ?? stateBucket,
+            pulumiStackName: environment.pulumiStackName ?? prefix,
             setupComplete: true,
           },
         });
 
         environment.ecrUri = setup.ecrUri;
         environment.codebuildProjectName = setup.codebuildProjectName;
-        environment.pulumiBackendBucket = stateBucket;
-        environment.pulumiStackName = prefix;
+        environment.pulumiBackendBucket = environment.pulumiBackendBucket ?? stateBucket;
+        environment.pulumiStackName = environment.pulumiStackName ?? prefix;
         environment.setupComplete = true;
       }
 
@@ -142,7 +150,7 @@ export class DeploymentProcessor extends WorkerHost {
       const imageTag = commitSha.slice(0, 7);
 
       await startBuildAndStream({
-        projectName: environment.codebuildProjectName!,
+        projectName: environment.codebuildProjectName ?? codebuildProjectName,
         region: environment.region,
         awsCreds,
         envOverrides: {
@@ -154,7 +162,7 @@ export class DeploymentProcessor extends WorkerHost {
           ECR_REPO: ecrRepo,
           IMAGE_TAG: imageTag,
           DOCKERFILE_PATH: heizenConfig.dockerfilePath ?? "Dockerfile",
-          CODEBUILD_PROJECT_NAME: environment.codebuildProjectName!,
+          CODEBUILD_PROJECT_NAME: environment.codebuildProjectName ?? codebuildProjectName,
         },
         onLog: (message, level) => {
           const lower = message.toLowerCase();

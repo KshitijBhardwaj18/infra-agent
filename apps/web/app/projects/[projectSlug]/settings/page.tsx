@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Trash2 } from "lucide-react";
+import { Trash2, Copy, Check } from "lucide-react";
 import { GitHubIcon } from "@/components/icons/GitHubIcon";
 import { api, apiUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,16 @@ export default function ProjectSettingsPage({
   const [verifyResult, setVerifyResult] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [copiedEnvId, setCopiedEnvId] = useState(false);
+
+  const productionEnv = project?.environments.find((e) => e.type === "PRODUCTION");
+
+  const copyEnvironmentId = async () => {
+    if (!productionEnv) return;
+    await navigator.clipboard.writeText(productionEnv.id);
+    setCopiedEnvId(true);
+    setTimeout(() => setCopiedEnvId(false), 2000);
+  };
 
   useEffect(() => {
     params.then(async ({ projectSlug }) => {
@@ -238,6 +248,31 @@ export default function ProjectSettingsPage({
               Production environment AWS credentials
             </p>
             <div className="space-y-4">
+              {productionEnv && (
+                <div className="space-y-1.5">
+                  <Label>Environment ID</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Use this as the External ID in your IAM role trust policy.
+                  </p>
+                  <div className="flex gap-2">
+                    <Input value={productionEnv.id} readOnly className="font-mono text-xs" />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      onClick={copyEnvironmentId}
+                      className="shrink-0"
+                      aria-label="Copy environment ID"
+                    >
+                      {copiedEnvId ? (
+                        <Check size={14} className="text-green-500" />
+                      ) : (
+                        <Copy size={14} />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label>AWS Account ID</Label>
                 <Input value={awsAccountId} onChange={(e) => setAwsAccountId(e.target.value)} />

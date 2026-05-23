@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { HeizenConfig } from "@heizen/shared";
-import { X } from "lucide-react";
+import { X, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,13 @@ export function DeployForm({
   >([]);
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState<string | null>(null);
+  const [copiedEnvId, setCopiedEnvId] = useState(false);
+
+  const copyEnvironmentId = async () => {
+    await navigator.clipboard.writeText(environmentId);
+    setCopiedEnvId(true);
+    setTimeout(() => setCopiedEnvId(false), 2000);
+  };
 
   useEffect(() => {
     api<
@@ -211,6 +218,29 @@ export function DeployForm({
         {step === 2 && (
           <div className="space-y-4">
             <div>
+              <Label>Environment ID</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Use this as the External ID in your IAM role trust policy.
+              </p>
+              <div className="mt-1.5 flex gap-2">
+                <Input value={environmentId} readOnly className="font-mono text-xs" />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  onClick={copyEnvironmentId}
+                  className="shrink-0"
+                  aria-label="Copy environment ID"
+                >
+                  {copiedEnvId ? (
+                    <Check size={14} className="text-green-500" />
+                  ) : (
+                    <Copy size={14} />
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div>
               <Label>AWS Account ID</Label>
               <Input
                 value={awsAccountId}
@@ -231,9 +261,10 @@ export function DeployForm({
                 How to create the IAM role
               </summary>
               <p className="mt-2 leading-relaxed">
-                Create an IAM role in your AWS account that trusts the Heizen platform account
-                with an external ID equal to your environment ID. Grant it AdministratorAccess
-                or scoped permissions for ECS, RDS, ElastiCache, S3, ALB, and IAM.
+                Create an IAM role in your AWS account that trusts the Heizen platform AWS
+                account (<code className="text-foreground">PLATFORM_AWS_ACCOUNT_ID</code>) with an
+                external ID equal to the environment ID above. Grant it AdministratorAccess or
+                scoped permissions for ECS, RDS, ElastiCache, S3, ALB, and IAM.
               </p>
             </details>
             <Button size="sm" onClick={verifyAws} variant="outline">
