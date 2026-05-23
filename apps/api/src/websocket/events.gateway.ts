@@ -4,8 +4,11 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from "@nestjs/websockets";
+import { Inject } from "@nestjs/common";
 import { Server, Socket } from "socket.io";
 import { auth } from "../auth/auth.config";
+import { PRISMA } from "../prisma/prisma.module";
+import type { PrismaClient } from "@heizen/db";
 import type {
   DeploymentStatusPayload,
   EnvironmentStatusPayload,
@@ -22,6 +25,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;
 
+  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {}
+
   async handleConnection(client: Socket) {
     try {
       const cookie = client.handshake.headers.cookie ?? "";
@@ -29,12 +34,26 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         headers: { cookie } as Record<string, string>,
       });
 
-      if (!session?.session?.activeOrganizationId) {
+      if (!session?.user) {
         client.disconnect();
         return;
       }
 
-      const orgId = session.session.activeOrganizationId;
+      let orgId = session.session?.activeOrganizationId;
+
+      if (!orgId) {
+        const member = await this.prisma.member.findFirst({
+          where: { userId: session.user.id },
+          orderBy: { createdAt: "asc" },
+        });
+        orgId = member?.organizationId ?? null;
+      }
+
+      if (!orgId) {
+        client.disconnect();
+        return;
+      }
+
       client.join(`org:${orgId}`);
       (client as Socket & { orgId?: string }).orgId = orgId;
     } catch {

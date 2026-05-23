@@ -43,6 +43,8 @@ export class ProjectsService {
             type: true,
             status: true,
             lastDeployedAt: true,
+            heizenConfig: true,
+            stackOutputs: true,
           },
         },
       },

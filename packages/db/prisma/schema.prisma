@@ -119,6 +119,7 @@ model Environment {
   codebuildProjectName String?
   setupComplete        Boolean         @default(false)
   heizenConfig         Json?
+  stackOutputs         Json?
   status               EnvironmentStatus @default(NOT_DEPLOYED)
   lastDeployedAt       DateTime?
   createdAt            DateTime        @default(now())

@@ -242,7 +242,11 @@ export class DeploymentProcessor extends WorkerHost {
 
       await this.prisma.environment.update({
         where: { id: environmentId },
-        data: { status: "LIVE", lastDeployedAt: new Date() },
+        data: {
+          status: "LIVE",
+          lastDeployedAt: new Date(),
+          stackOutputs: upResult.outputs as object,
+        },
       });
 
       // 14. WebSocket events

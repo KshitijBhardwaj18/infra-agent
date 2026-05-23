@@ -27,21 +27,32 @@ export class GithubController {
 
   @Get("github/install")
   @UseGuards(AuthGuard)
-  install(@Res() res: Response) {
-    return res.redirect(this.github.getInstallUrl());
+  install(@Res() res: Response, @Query("projectId") projectId: string) {
+    return res.redirect(this.github.getInstallUrl(projectId ?? ""));
   }
 
   @Get("github/callback")
   @UseGuards(AuthGuard, OrgGuard)
   async callback(
     @Query("installation_id") installationId: string,
-    @Query("projectId") projectId: string,
+    @Query("state") stateParam: string,
     @CurrentOrg() orgId: string,
     @Res() res: Response,
   ) {
-    await this.github.handleCallback(projectId, installationId, orgId);
     const origin = process.env.CORS_ORIGIN ?? "http://localhost:3000";
-    return res.redirect(`${origin}/projects/${projectId}`);
+
+    let projectId: string;
+    try {
+      const decoded = JSON.parse(Buffer.from(stateParam, "base64").toString()) as {
+        projectId: string;
+      };
+      projectId = decoded.projectId;
+    } catch {
+      return res.redirect(`${origin}/dashboard?error=github_state_invalid`);
+    }
+
+    const project = await this.github.handleCallback(projectId, installationId, orgId);
+    return res.redirect(`${origin}/projects/${project.slug}`);
   }
 
   @Get("projects/:id/github/repos")

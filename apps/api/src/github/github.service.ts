@@ -22,9 +22,10 @@ export class GithubService {
     private readonly indexingSse: IndexingSseService,
   ) {}
 
-  getInstallUrl(): string {
+  getInstallUrl(projectId: string): string {
     const slug = process.env.GITHUB_APP_SLUG ?? "heizen";
-    return `https://github.com/apps/${slug}/installations/new`;
+    const state = Buffer.from(JSON.stringify({ projectId })).toString("base64");
+    return `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(state)}`;
   }
 
   async handleCallback(projectId: string, installationId: string, orgId: string) {

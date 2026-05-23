@@ -18,12 +18,13 @@ function LoginContent() {
     setError(null);
     setLoading(true);
     try {
-      const result = await signIn.social({ provider: "github", callbackURL: next });
+      const callbackURL = `${window.location.origin}${next}`;
+      const result = await signIn.social({ provider: "github", callbackURL });
       if (result.error) {
         setError(result.error.message ?? "GitHub sign-in failed. Check API env config.");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "GitHub sign-in failed. Is the API running?");
+      setError(err instanceof Error ? err.message : "Sign-in failed. Is the API running?");
     } finally {
       setLoading(false);
     }

@@ -34,7 +34,10 @@ export default function ProjectsPage() {
     api<Project[]>("/api/projects")
       .then(setProjects)
       .catch((err: Error) => {
-        if (err.message.includes("401") || err.message.includes("403")) {
+        const msg = err.message;
+        if (msg.includes("No organization")) {
+          router.replace("/onboarding");
+        } else if (msg.includes("401")) {
           router.replace("/login");
         }
       })

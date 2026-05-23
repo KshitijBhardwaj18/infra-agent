@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
+import { authClient } from "@/lib/auth-client";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -19,12 +20,16 @@ export default function OnboardingPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      await api("/api/organizations", {
+      const org = await api<{ id: string; name: string }>("/api/organizations", {
         method: "POST",
         body: JSON.stringify({ name: orgName, slug: orgSlug }),
       });
-      setStep(2);
+
+      await authClient.organization.setActive({ organizationId: org.id });
+
       router.push("/dashboard");
+    } catch (err) {
+      console.error("Failed to create org:", err);
     } finally {
       setLoading(false);
     }

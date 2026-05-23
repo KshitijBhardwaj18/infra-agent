@@ -15,22 +15,27 @@ export class OrgGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const userId = request.user?.id;
-    const orgId = request.session?.activeOrganizationId;
+    if (!userId) throw new ForbiddenException("Not authenticated");
 
-    if (!userId || !orgId) {
-      throw new ForbiddenException("No active organization");
+    const activeOrgId = request.session?.activeOrganizationId;
+
+    if (activeOrgId) {
+      const member = await this.prisma.member.findFirst({
+        where: { userId, organizationId: activeOrgId },
+      });
+      if (!member) throw new ForbiddenException("Not a member of this organization");
+      request.organizationId = activeOrgId;
+      return true;
     }
 
     const member = await this.prisma.member.findFirst({
-      where: { userId, organizationId: orgId },
+      where: { userId },
+      orderBy: { createdAt: "asc" },
     });
 
-    if (!member) {
-      throw new ForbiddenException("Not a member of this organization");
-    }
+    if (!member) throw new ForbiddenException("No organization found");
 
-    request.organizationId = orgId;
-    request.member = member;
+    request.organizationId = member.organizationId;
     return true;
   }
 }
