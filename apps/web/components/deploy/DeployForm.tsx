@@ -53,6 +53,22 @@ export function DeployForm({
       .catch(() => {});
   }, [projectId, environmentId]);
 
+  useEffect(() => {
+    api<{ awsAccountId: string | null; awsRoleArn: string | null; region: string | null }>(
+      `/api/projects/${projectId}/environments/${environmentId}`,
+    )
+      .then((env) => {
+        if (env.awsAccountId) setAwsAccountId(env.awsAccountId);
+        if (env.awsRoleArn) setAwsRoleArn(env.awsRoleArn);
+      })
+      .catch(() => {});
+  }, [projectId, environmentId]);
+
+  const goToStep = (n: number) => {
+    setDeployError(null);
+    setStep(n);
+  };
+
   const updateConfig = (patch: Partial<HeizenConfig>) =>
     setConfig((c) => ({ ...c, ...patch }));
 
@@ -141,6 +157,12 @@ export function DeployForm({
           </button>
         </div>
 
+        {deployError && (
+          <p className="mb-4 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400">
+            {deployError}
+          </p>
+        )}
+
         {step === 1 && (
           <div className="space-y-4">
             <div>
@@ -180,7 +202,7 @@ export function DeployForm({
               </select>
             </div>
             <CostEstimator config={config} />
-            <Button size="sm" onClick={() => setStep(2)} className="w-full">
+            <Button size="sm" onClick={() => goToStep(2)} className="w-full">
               Next: AWS Access
             </Button>
           </div>
@@ -220,10 +242,10 @@ export function DeployForm({
             {verifyResult && <p className="text-sm text-green-500">{verifyResult}</p>}
             {verifyError && <p className="text-sm text-red-400">{verifyError}</p>}
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setStep(1)}>
+              <Button size="sm" variant="outline" onClick={() => goToStep(1)}>
                 Back
               </Button>
-              <Button size="sm" onClick={() => setStep(3)} className="flex-1">
+              <Button size="sm" onClick={() => goToStep(3)} className="flex-1">
                 Next: Environment variables
               </Button>
             </div>
@@ -260,10 +282,10 @@ export function DeployForm({
               Add variable
             </Button>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setStep(2)}>
+              <Button size="sm" variant="outline" onClick={() => goToStep(2)}>
                 Back
               </Button>
-              <Button size="sm" onClick={() => setStep(4)} className="flex-1">
+              <Button size="sm" onClick={() => goToStep(4)} className="flex-1">
                 Next: Review
               </Button>
             </div>
@@ -282,18 +304,13 @@ export function DeployForm({
             <CostEstimator config={config} />
             <Separator />
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setStep(3)}>
+              <Button size="sm" variant="outline" onClick={() => goToStep(3)}>
                 Back
               </Button>
               <Button size="sm" onClick={deploy} disabled={deploying} className="flex-1">
                 {deploying ? "Deploying..." : `Deploy to ${envType}`}
               </Button>
             </div>
-            {deployError && (
-              <p className="rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400">
-                {deployError}
-              </p>
-            )}
           </div>
         )}
       </Card>

@@ -38,6 +38,14 @@ export class DeploymentsSseService implements OnModuleDestroy {
     return this.getSubject(deploymentId).asObservable();
   }
 
+  cleanup(deploymentId: string): void {
+    const subject = this.subjects.get(deploymentId);
+    if (subject) {
+      subject.complete();
+      this.subjects.delete(deploymentId);
+    }
+  }
+
   async logAndEmit(
     deploymentId: string,
     phase: DeploymentPhase,

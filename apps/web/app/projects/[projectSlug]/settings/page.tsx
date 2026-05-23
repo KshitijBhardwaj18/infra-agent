@@ -55,6 +55,7 @@ export default function ProjectSettingsPage({
   const [region, setRegion] = useState("us-east-1");
   const [verifyResult, setVerifyResult] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     params.then(async ({ projectSlug }) => {
@@ -78,12 +79,15 @@ export default function ProjectSettingsPage({
   const saveGeneral = async () => {
     if (!project) return;
     setSaving(true);
+    setSaveError(null);
     try {
       await api(`/api/projects/${project.id}`, {
         method: "PATCH",
         body: JSON.stringify({ name }),
       });
       setProject({ ...project, name });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
     }
@@ -94,11 +98,15 @@ export default function ProjectSettingsPage({
     const prod = project.environments.find((e) => e.type === "PRODUCTION");
     if (!prod) return;
     setSaving(true);
+    setSaveError(null);
     try {
       await api(`/api/projects/${project.id}/environments/${prod.id}`, {
         method: "PATCH",
         body: JSON.stringify({ awsAccountId, awsRoleArn, region }),
       });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save AWS config");
+      throw err;
     } finally {
       setSaving(false);
     }
@@ -108,12 +116,22 @@ export default function ProjectSettingsPage({
     if (!project) return;
     const prod = project.environments.find((e) => e.type === "PRODUCTION");
     if (!prod) return;
-    await saveAws();
-    const res = await api<{ message: string }>(
-      `/api/projects/${project.id}/environments/${prod.id}/aws/verify`,
-      { method: "POST" },
-    );
-    setVerifyResult(res.message);
+    setVerifyResult(null);
+    setSaveError(null);
+    try {
+      await saveAws();
+    } catch {
+      return;
+    }
+    try {
+      const res = await api<{ message: string }>(
+        `/api/projects/${project.id}/environments/${prod.id}/aws/verify`,
+        { method: "POST" },
+      );
+      setVerifyResult(res.message);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Verification failed");
+    }
   };
 
   const deleteProject = async () => {
@@ -172,6 +190,7 @@ export default function ProjectSettingsPage({
               <Button size="sm" onClick={saveGeneral} disabled={saving}>
                 Save changes
               </Button>
+              {saveError && <p className="text-sm text-red-400">{saveError}</p>}
             </div>
           </div>
         </TabsContent>
@@ -238,6 +257,7 @@ export default function ProjectSettingsPage({
                 </Button>
               </div>
               {verifyResult && <p className="text-sm text-green-400">{verifyResult}</p>}
+              {saveError && <p className="text-sm text-red-400">{saveError}</p>}
             </div>
           </div>
         </TabsContent>

@@ -48,7 +48,6 @@ export async function runPulumiUp(
   } = options;
 
   const envVars = workspaceEnvVars(awsCreds, backendBucket, passphrase);
-  Object.assign(process.env, envVars);
 
   const stack = await pulumi.LocalWorkspace.createOrSelectStack(
     { stackName, workDir },
@@ -96,7 +95,6 @@ export async function exportStack(
   awsCreds: AwsCredentials,
 ): Promise<{ resources: StackResourceExport[] }> {
   const envVars = workspaceEnvVars(awsCreds, backendBucket, passphrase);
-  Object.assign(process.env, envVars);
 
   const stack = await pulumi.LocalWorkspace.selectStack(
     { stackName, workDir },

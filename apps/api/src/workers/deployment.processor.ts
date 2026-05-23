@@ -287,6 +287,7 @@ export class DeploymentProcessor extends WorkerHost {
       throw error;
     } finally {
       await fs.rm(outputDir, { recursive: true, force: true }).catch(() => {});
+      this.sse.cleanup(deploymentId);
     }
   }
 }
