@@ -142,6 +142,8 @@ export default function ProjectSettingsPage({
 
   const connectGithub = () => {
     if (!project) return;
+    document.cookie = `heizen_pending_project=${project.id}; path=/; max-age=600; SameSite=Lax`;
+    document.cookie = `heizen_pending_env=staging; path=/; max-age=600; SameSite=Lax`;
     window.location.href = `${apiUrl("/api/github/install")}?projectId=${project.id}`;
   };
 

@@ -58,35 +58,24 @@ export class GithubController {
   @UseGuards(AuthGuard)
   async completeInstall(
     @CurrentUser() user: { id: string },
-    @Body() body: { installationId: string; state: string },
+    @Body() body: { installationId: string; projectId: string },
   ) {
     if (!body?.installationId) {
       throw new BadRequestException("installationId is required");
     }
-    if (!body?.state) {
-      throw new BadRequestException("state is required");
+    if (!body?.projectId) {
+      throw new BadRequestException("projectId is required");
     }
 
-    let projectId: string;
-    let returnEnv = "staging";
-    try {
-      const decoded = JSON.parse(Buffer.from(body.state, "base64").toString()) as {
-        projectId: string;
-        returnEnv?: string;
-      };
-      projectId = decoded.projectId;
-      returnEnv = decoded.returnEnv ?? "staging";
-    } catch {
-      throw new BadRequestException("Invalid state parameter");
-    }
-
-    if (!projectId) {
-      throw new BadRequestException("state did not contain a projectId");
-    }
-
-    this.logger.log(`Completing GitHub install for project ${projectId} (user ${user.id})`);
-    const project = await this.github.handleCallback(user.id, projectId, body.installationId);
-    return { slug: project.slug, id: project.id, returnEnv };
+    this.logger.log(
+      `GitHub install: project=${body.projectId} user=${user.id} installation=${body.installationId}`,
+    );
+    const project = await this.github.handleCallback(
+      user.id,
+      body.projectId,
+      body.installationId,
+    );
+    return { slug: project.slug, id: project.id };
   }
 
   @Get("github/callback")

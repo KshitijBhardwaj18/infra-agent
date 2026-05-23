@@ -5,6 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`${name}=([^;]+)`));
+  return match?.[1]?.trim() ?? null;
+}
+
+function clearCookie(name: string) {
+  document.cookie = `${name}=; path=/; max-age=0`;
+}
+
 function GitHubInstalledContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -16,29 +25,32 @@ function GitHubInstalledContent() {
     ran.current = true;
 
     const installationId = searchParams.get("installation_id");
-    const stateParam = searchParams.get("state");
 
     if (!installationId) {
-      setError("Missing installation ID from GitHub.");
+      setError("Missing installation_id from GitHub.");
       return;
     }
-    if (!stateParam) {
-      setError("Missing state parameter from GitHub.");
+
+    const projectId = readCookie("heizen_pending_project");
+    const returnEnv = readCookie("heizen_pending_env") ?? "staging";
+
+    if (!projectId) {
+      setError("Session expired. Go back and try connecting again.");
       return;
     }
 
     (async () => {
       try {
-        const result = await api<{ slug: string; returnEnv?: string }>(
-          "/api/github/install-complete",
-          {
-            method: "POST",
-            body: JSON.stringify({ installationId, state: stateParam }),
-          },
-        );
-        router.replace(`/projects/${result.slug}/${result.returnEnv ?? "staging"}`);
+        const result = await api<{ slug: string }>("/api/github/install-complete", {
+          method: "POST",
+          body: JSON.stringify({ installationId, projectId }),
+        });
+        clearCookie("heizen_pending_project");
+        clearCookie("heizen_pending_env");
+        router.replace(`/projects/${result.slug}/${returnEnv}`);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to complete GitHub install";
+        const message =
+          err instanceof Error ? err.message : "Failed to complete GitHub setup";
         if (message.includes("401")) {
           const next = encodeURIComponent(
             `/github/installed?${searchParams.toString()}`,

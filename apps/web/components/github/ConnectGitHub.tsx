@@ -38,7 +38,9 @@ export function ConnectGitHub({
 
   const install = () => {
     const currentEnv = window.location.pathname.split("/")[3] ?? "staging";
-    window.location.href = `${apiUrl("/api/github/install")}?projectId=${projectId}&return_env=${currentEnv}`;
+    document.cookie = `heizen_pending_project=${projectId}; path=/; max-age=600; SameSite=Lax`;
+    document.cookie = `heizen_pending_env=${currentEnv}; path=/; max-age=600; SameSite=Lax`;
+    window.location.href = `${apiUrl("/api/github/install")}?projectId=${projectId}`;
   };
 
   const connect = async (repo: Repo) => {
