@@ -29,13 +29,23 @@ function GitHubInstalledContent() {
 
     (async () => {
       try {
-        const result = await api<{ slug: string }>("/api/github/install-complete", {
-          method: "POST",
-          body: JSON.stringify({ installationId, state: stateParam }),
-        });
-        router.replace(`/projects/${result.slug}/staging`);
+        const result = await api<{ slug: string; returnEnv?: string }>(
+          "/api/github/install-complete",
+          {
+            method: "POST",
+            body: JSON.stringify({ installationId, state: stateParam }),
+          },
+        );
+        router.replace(`/projects/${result.slug}/${result.returnEnv ?? "staging"}`);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to complete GitHub install";
+        if (message.includes("401")) {
+          const next = encodeURIComponent(
+            `/github/installed?${searchParams.toString()}`,
+          );
+          router.replace(`/login?next=${next}`);
+          return;
+        }
         setError(message);
       }
     })();

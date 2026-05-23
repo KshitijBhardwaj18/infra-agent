@@ -11,6 +11,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // GitHub post-install redirect: preserve installation_id/state query params.
+  // Auth is enforced by POST /api/github/install-complete, not middleware.
+  if (pathname.startsWith("/github/installed")) {
+    return NextResponse.next();
+  }
+
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     const sessionCookie = request.cookies.get("better-auth.session_token");
     if (sessionCookie) {

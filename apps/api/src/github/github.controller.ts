@@ -46,8 +46,12 @@ export class GithubController {
 
   @Get("github/install")
   @UseGuards(AuthGuard)
-  install(@Res() res: Response, @Query("projectId") projectId: string) {
-    return res.redirect(this.github.getInstallUrl(projectId ?? ""));
+  install(
+    @Res() res: Response,
+    @Query("projectId") projectId: string,
+    @Query("return_env") returnEnv: string,
+  ) {
+    return res.redirect(this.github.getInstallUrl(projectId ?? "", returnEnv ?? "staging"));
   }
 
   @Post("github/install-complete")
@@ -64,11 +68,14 @@ export class GithubController {
     }
 
     let projectId: string;
+    let returnEnv = "staging";
     try {
       const decoded = JSON.parse(Buffer.from(body.state, "base64").toString()) as {
         projectId: string;
+        returnEnv?: string;
       };
       projectId = decoded.projectId;
+      returnEnv = decoded.returnEnv ?? "staging";
     } catch {
       throw new BadRequestException("Invalid state parameter");
     }
@@ -79,7 +86,7 @@ export class GithubController {
 
     this.logger.log(`Completing GitHub install for project ${projectId} (user ${user.id})`);
     const project = await this.github.handleCallback(user.id, projectId, body.installationId);
-    return { slug: project.slug, id: project.id };
+    return { slug: project.slug, id: project.id, returnEnv };
   }
 
   @Get("github/callback")
@@ -97,25 +104,28 @@ export class GithubController {
     }
 
     let projectId: string;
+    let returnEnv = "staging";
     try {
       const decoded = JSON.parse(Buffer.from(stateParam, "base64").toString()) as {
         projectId: string;
+        returnEnv?: string;
       };
       projectId = decoded.projectId;
+      returnEnv = decoded.returnEnv ?? "staging";
     } catch {
       return res.redirect(`${origin}/dashboard?error=github_state_invalid`);
     }
 
     try {
       const project = await this.github.handleCallback(user.id, projectId, installationId);
-      return res.redirect(`${origin}/projects/${project.slug}`);
+      return res.redirect(`${origin}/projects/${project.slug}/${returnEnv}`);
     } catch (err) {
       const message = getErrorMessage(err);
       this.logger.error(`GitHub callback failed: ${message}`, err instanceof Error ? err.stack : undefined);
       const reason = encodeURIComponent(message);
       const slug = await this.github.getProjectSlug(projectId);
       const base = slug
-        ? `${origin}/projects/${slug}/staging`
+        ? `${origin}/projects/${slug}/${returnEnv}`
         : `${origin}/dashboard`;
       return res.redirect(`${base}?error=github_install_failed&reason=${reason}`);
     }

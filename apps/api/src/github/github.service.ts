@@ -23,9 +23,9 @@ export class GithubService {
     private readonly indexingSse: IndexingSseService,
   ) {}
 
-  getInstallUrl(projectId: string): string {
+  getInstallUrl(projectId: string, returnEnv = "staging"): string {
     const slug = process.env.GITHUB_APP_SLUG ?? "heizen";
-    const state = Buffer.from(JSON.stringify({ projectId })).toString("base64");
+    const state = Buffer.from(JSON.stringify({ projectId, returnEnv })).toString("base64");
     return `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(state)}`;
   }
 

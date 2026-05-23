@@ -37,7 +37,8 @@ export function ConnectGitHub({
   }, [installationId, projectId]);
 
   const install = () => {
-    window.location.href = `${apiUrl("/api/github/install")}?projectId=${projectId}`;
+    const currentEnv = window.location.pathname.split("/")[3] ?? "staging";
+    window.location.href = `${apiUrl("/api/github/install")}?projectId=${projectId}&return_env=${currentEnv}`;
   };
 
   const connect = async (repo: Repo) => {
