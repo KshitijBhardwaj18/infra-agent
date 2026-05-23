@@ -10,7 +10,7 @@ import { PRISMA } from "../prisma/prisma.module";
 import {
   assumeCustomerRole,
   ensureStateBucket,
-  ensureCodeBuildProject,
+  runSetupStack,
   startBuildAndStream,
   buildTemplateContext,
   renderTemplates,
@@ -72,10 +72,10 @@ export class DeploymentProcessor extends WorkerHost {
       const stateBucket = `heizen-${project.slug}-${envType}-state`;
       const ecrRepoName = `heizen-${project.slug}-${envType}`;
       const roleName = `heizen-${project.slug}-${envType}-codebuild-role`;
-      const codebuildProjectName =
-        environment.codebuildProjectName ?? `heizen-${project.slug}-${envType}`;
+      const codebuildProjectName = `heizen-${project.slug}-${envType}`;
+      const passphrase = process.env.PULUMI_CONFIG_PASSPHRASE ?? "heizen";
 
-      // 1. Assume customer AWS role
+      // ── 1. Assume customer AWS role ──────────────────────────────────────
       await this.sse.logAndEmit(deploymentId, "SYSTEM", "info", "Assuming AWS role...");
       const awsCreds = await assumeCustomerRole(
         environment.awsRoleArn,
@@ -83,74 +83,89 @@ export class DeploymentProcessor extends WorkerHost {
         environment.region,
       );
 
-      // 2. First-time setup (Pulumi state bucket)
+      // ── 2. First-time setup (only runs once per environment) ─────────────
       if (!environment.setupComplete) {
-        await this.sse.logAndEmit(deploymentId, "SYSTEM", "info", "Running first-time infrastructure setup...");
+        await this.sse.logAndEmit(
+          deploymentId,
+          "SYSTEM",
+          "info",
+          "First-time setup: creating S3 state bucket...",
+        );
 
         const s3 = new S3Client({
           region: environment.region,
           credentials: awsCreds,
         });
         await ensureStateBucket(s3, stateBucket, environment.region);
-      }
 
-      // 3. Ensure CodeBuild project + ECR exist (idempotent, runs every deploy)
-      await this.sse.logAndEmit(deploymentId, "SYSTEM", "info", "Ensuring CodeBuild project...");
-      const setup = await ensureCodeBuildProject({
-        projectName: codebuildProjectName,
-        ecrRepoName,
-        roleName,
-        region: environment.region,
-        awsCreds,
-      });
+        await this.sse.logAndEmit(
+          deploymentId,
+          "SYSTEM",
+          "info",
+          "First-time setup: provisioning ECR, IAM role, and CodeBuild via Pulumi...",
+        );
 
-      if (
-        !environment.setupComplete ||
-        environment.ecrUri !== setup.ecrUri ||
-        environment.codebuildProjectName !== setup.codebuildProjectName
-      ) {
+        const setup = await runSetupStack({
+          stackName: `${prefix}-setup`,
+          backendBucket: stateBucket,
+          passphrase,
+          region: environment.region,
+          awsCreds,
+          ecrRepoName,
+          roleName,
+          projectName: codebuildProjectName,
+          onOutput: (line) => {
+            void this.sse.logAndEmit(deploymentId, "SYSTEM", "info", line);
+          },
+        });
+
         await this.prisma.environment.update({
           where: { id: environmentId },
           data: {
             ecrUri: setup.ecrUri,
             codebuildProjectName: setup.codebuildProjectName,
-            pulumiBackendBucket: environment.pulumiBackendBucket ?? stateBucket,
-            pulumiStackName: environment.pulumiStackName ?? prefix,
+            pulumiBackendBucket: stateBucket,
+            pulumiStackName: prefix,
             setupComplete: true,
           },
         });
 
         environment.ecrUri = setup.ecrUri;
         environment.codebuildProjectName = setup.codebuildProjectName;
-        environment.pulumiBackendBucket = environment.pulumiBackendBucket ?? stateBucket;
-        environment.pulumiStackName = environment.pulumiStackName ?? prefix;
+        environment.pulumiBackendBucket = stateBucket;
+        environment.pulumiStackName = prefix;
         environment.setupComplete = true;
+
+        await this.sse.logAndEmit(
+          deploymentId,
+          "SYSTEM",
+          "info",
+          "First-time setup complete.",
+        );
       }
 
-      const accountId =
-        environment.awsAccountId ??
-        environment.ecrUri?.split(".")[0] ??
-        "";
-      const ecrRegistry = `${accountId}.dkr.ecr.${environment.region!}.amazonaws.com`;
-      const ecrRepo = `heizen-${project.slug}-${envType}`;
-
-      // 3. Update status → BUILDING
+      // ── 3. Update status → BUILDING ──────────────────────────────────────
       await this.prisma.deployment.update({
         where: { id: deploymentId },
         data: { status: "BUILDING", startedAt: new Date() },
       });
       this.gateway.emitDeploymentStatus(orgId, { deploymentId, status: "BUILDING" });
 
-      // 4. Fresh GitHub token
+      // ── 4. Fresh GitHub installation token (1hr TTL) ─────────────────────
       if (!project.githubInstallationId) throw new Error("GitHub not connected");
       const ghToken = await this.githubToken.getToken(project.githubInstallationId);
 
-      // 5. Start CodeBuild
+      // ── 5. Docker build + push via CodeBuild ─────────────────────────────
       const commitSha = deployment.commitSha ?? "HEAD";
       const imageTag = commitSha.slice(0, 7);
+      const accountId =
+        environment.awsAccountId ??
+        environment.ecrUri?.split(".")[0] ??
+        "";
+      const ecrRegistry = `${accountId}.dkr.ecr.${environment.region}.amazonaws.com`;
 
       await startBuildAndStream({
-        projectName: environment.codebuildProjectName ?? codebuildProjectName,
+        projectName: environment.codebuildProjectName!,
         region: environment.region,
         awsCreds,
         envOverrides: {
@@ -159,10 +174,10 @@ export class DeploymentProcessor extends WorkerHost {
           GITHUB_REPO: project.githubRepo!,
           COMMIT_SHA: commitSha,
           ECR_REGISTRY: ecrRegistry,
-          ECR_REPO: ecrRepo,
+          ECR_REPO: ecrRepoName,
           IMAGE_TAG: imageTag,
           DOCKERFILE_PATH: heizenConfig.dockerfilePath ?? "Dockerfile",
-          CODEBUILD_PROJECT_NAME: environment.codebuildProjectName ?? codebuildProjectName,
+          CODEBUILD_PROJECT_NAME: environment.codebuildProjectName!,
         },
         onLog: (message, level) => {
           const lower = message.toLowerCase();
@@ -173,43 +188,54 @@ export class DeploymentProcessor extends WorkerHost {
             message.includes("Pushed")
               ? "DOCKER_PUSH"
               : "DOCKER_BUILD";
-          void this.sse.logAndEmit(deploymentId, phase as "DOCKER_BUILD", level, message);
+          void this.sse.logAndEmit(
+            deploymentId,
+            phase as "DOCKER_BUILD",
+            level,
+            message,
+          );
         },
       });
 
-      // 7. Update status → DEPLOYING
+      // ── 6. Update status → DEPLOYING ─────────────────────────────────────
       await this.prisma.deployment.update({
         where: { id: deploymentId },
         data: { status: "DEPLOYING", imageTag, ecrUri: environment.ecrUri },
       });
       this.gateway.emitDeploymentStatus(orgId, { deploymentId, status: "DEPLOYING" });
 
-      // 8. Generate Pulumi code
-      const envCfg: HeizenEnvConfig = { env: await this.envVars.getDecryptedForDeployment(environmentId) };
+      // ── 7. Generate Pulumi infrastructure code from Handlebars templates ──
+      const envCfg: HeizenEnvConfig = {
+        env: await this.envVars.getDecryptedForDeployment(environmentId),
+      };
       const updatedConfig: HeizenConfig = {
         ...heizenConfig,
         env: envType,
-        ecr: { image: environment.ecrUri!.split(":")[0] ?? environment.ecrUri!, tag: imageTag },
+        ecr: {
+          image: environment.ecrUri!.split(":")[0] ?? environment.ecrUri!,
+          tag: imageTag,
+        },
       };
       const ctx = buildTemplateContext(updatedConfig, envCfg);
       await renderTemplates(ctx, envType, outputDir);
 
-      // 9. Pulumi up
+      // ── 8. Pulumi up — deploy the actual infrastructure ───────────────────
       const configSecrets: Record<string, string> = {};
-      for (const [service, vars] of Object.entries(envCfg.env)) {
+      for (const [, vars] of Object.entries(envCfg.env)) {
         for (const [key, value] of Object.entries(vars)) {
-          const camelKey = key.toLowerCase().replace(/[-_](.)/g, (_, c: string) => c.toUpperCase());
+          const camelKey = key
+            .toLowerCase()
+            .replace(/[-_](.)/g, (_, c: string) => (c as string).toUpperCase());
           configSecrets[camelKey] = value;
         }
       }
 
       const stackName = environment.pulumiStackName ?? prefix;
-
       const upResult = await runPulumiUp({
         workDir: outputDir,
         stackName,
         backendBucket: environment.pulumiBackendBucket!,
-        passphrase: process.env.PULUMI_CONFIG_PASSPHRASE ?? "heizen",
+        passphrase,
         awsCreds,
         configSecrets,
         needsDbPassword: updatedConfig.database.engine === "postgres",
@@ -225,12 +251,12 @@ export class DeploymentProcessor extends WorkerHost {
         });
       }
 
-      // 10-11. Parse outputs and export stack
+      // ── 9. Export stack state → save resources for the resource graph ─────
       const exported = await exportStack(
         outputDir,
         stackName,
         environment.pulumiBackendBucket!,
-        process.env.PULUMI_CONFIG_PASSPHRASE ?? "heizen",
+        passphrase,
         awsCreds,
       );
 
@@ -249,12 +275,27 @@ export class DeploymentProcessor extends WorkerHost {
         });
       }
 
-      // 12-13. Mark SUCCESS / LIVE
+      // ── 10. Extract plain values from Pulumi's OutputValue wrapper ─────────
+      const rawOutputs = upResult.outputs as Record<
+        string,
+        { value: unknown; secret: boolean }
+      >;
+      const stackOutputs: Record<string, unknown> = {};
+      for (const [key, output] of Object.entries(rawOutputs)) {
+        stackOutputs[key] =
+          output !== null &&
+          typeof output === "object" &&
+          "value" in output
+            ? output.value
+            : output;
+      }
+
+      // ── 11. Mark SUCCESS / LIVE ──────────────────────────────────────────
       await this.prisma.deployment.update({
         where: { id: deploymentId },
         data: {
           status: "SUCCESS",
-          stackOutputs: upResult.outputs as object,
+          stackOutputs,
           completedAt: new Date(),
         },
       });
@@ -264,18 +305,24 @@ export class DeploymentProcessor extends WorkerHost {
         data: {
           status: "LIVE",
           lastDeployedAt: new Date(),
-          stackOutputs: upResult.outputs as object,
+          stackOutputs,
         },
       });
 
-      // 14. WebSocket events
+      // ── 12. WebSocket events → browser updates ───────────────────────────
       this.gateway.emitDeploymentStatus(orgId, { deploymentId, status: "SUCCESS" });
       this.gateway.emitEnvironmentStatus(orgId, { environmentId, status: "LIVE" });
 
-      await this.sse.logAndEmit(deploymentId, "SYSTEM", "info", "Deployment completed successfully");
+      await this.sse.logAndEmit(
+        deploymentId,
+        "SYSTEM",
+        "info",
+        "Deployment completed successfully.",
+      );
     } catch (error) {
       this.logger.error(`Deployment ${deploymentId} failed`, error);
-      const message = error instanceof Error ? error.message : String(error);
+      const message =
+        error instanceof Error ? error.message : String(error);
 
       await this.prisma.deployment.update({
         where: { id: deploymentId },

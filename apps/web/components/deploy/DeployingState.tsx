@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
+import { useDeploymentStatus } from "@/hooks/useWebSocket";
 
 interface Deployment {
   id: string;
@@ -57,13 +58,19 @@ export function DeployingState({
       .finally(() => setLoading(false));
   }, [projectId, environmentId]);
 
+  useDeploymentStatus((payload) => {
+    if (payload.deploymentId === deployId) {
+      setDeployStatus(payload.status);
+    }
+  });
+
   const phaseLabel =
-    deployStatus === "BUILDING"
-      ? "Building Docker image"
-      : deployStatus === "DEPLOYING"
-        ? "Deploying infrastructure"
-        : deployStatus === "PUSHING"
-          ? "Pushing image to registry"
+    deployStatus === "QUEUED"
+      ? "Setting up build infrastructure"
+      : deployStatus === "BUILDING"
+        ? "Building Docker image"
+        : deployStatus === "DEPLOYING"
+          ? "Deploying infrastructure"
           : "Preparing deployment";
 
   return (
@@ -71,7 +78,9 @@ export function DeployingState({
       <div className="flex justify-center">
         <Loader2 size={24} className="animate-spin text-blue-500" />
       </div>
-      <h2 className="mt-4 text-base font-medium capitalize">Deploying to {envType}</h2>
+      <h2 className="mt-4 text-base font-medium capitalize">
+        Deploying to {envType}
+      </h2>
       <p className="mt-1 text-sm text-muted-foreground">{phaseLabel}</p>
 
       <Separator className="my-4" />
@@ -90,14 +99,20 @@ export function DeployingState({
       )}
 
       {deployId ? (
-        <Link href={`/projects/${projectSlug}/${envType}/deployments/${deployId}`}>
+        <Link
+          href={`/projects/${projectSlug}/${envType}/deployments/${deployId}`}
+        >
           <Button size="sm" className="mt-4 w-full">
             View live logs
             <ArrowRight size={14} className="ml-2" />
           </Button>
         </Link>
       ) : (
-        !loading && <p className="mt-4 text-sm text-muted-foreground">No active deployment found.</p>
+        !loading && (
+          <p className="mt-4 text-sm text-muted-foreground">
+            No active deployment found.
+          </p>
+        )
       )}
 
       <p className="mt-4 text-xs text-muted-foreground">

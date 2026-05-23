@@ -13,10 +13,29 @@ import { useSse } from "@/hooks/useSse";
 import type { DeploymentLogPayload } from "@heizen/shared";
 
 const STEPS = [
-  { key: "build", label: "Build", phases: ["DOCKER_BUILD"] },
-  { key: "push", label: "Push", phases: ["DOCKER_PUSH"] },
-  { key: "deploy", label: "Deploy", phases: ["PULUMI", "SYSTEM"] },
+  {
+    key: "setup",
+    label: "Setup",
+    activeStatuses: ["QUEUED"],
+    doneAfter: ["BUILDING", "DEPLOYING", "SUCCESS"],
+  },
+  {
+    key: "build",
+    label: "Build",
+    activeStatuses: ["BUILDING"],
+    doneAfter: ["DEPLOYING", "SUCCESS"],
+    logPhases: ["DOCKER_BUILD", "DOCKER_PUSH"] as const,
+  },
+  {
+    key: "deploy",
+    label: "Deploy",
+    activeStatuses: ["DEPLOYING"],
+    doneAfter: ["SUCCESS"],
+    logPhases: ["PULUMI"] as const,
+  },
 ] as const;
+
+type StepState = "waiting" | "active" | "done" | "failed";
 
 function timeAgo(date: string) {
   const diff = Date.now() - new Date(date).getTime();
@@ -49,31 +68,45 @@ function DeploymentDetailContent({
   const { data: logs } = useSse<DeploymentLogPayload>(logUrl, Boolean(logUrl));
 
   useEffect(() => {
-    params.then(async ({ projectSlug: slug, env, deployId: id }) => {
-      setProjectSlug(slug);
-      setEnvType(env);
-      setDeployId(id);
+    params
+      .then(async ({ projectSlug: slug, env, deployId: id }) => {
+        setProjectSlug(slug);
+        setEnvType(env);
+        setDeployId(id);
 
-      const projects = await api<
-        Array<{ id: string; slug: string; environments: Array<{ id: string; type: string }> }>
-      >("/api/projects");
-      const project = projects.find((p) => p.slug === slug);
-      if (project) {
-        setProjectId(project.id);
-        const environment = project.environments.find(
-          (e) => e.type.toLowerCase() === env.toLowerCase(),
-        );
-        if (environment) {
-          setEnvId(environment.id);
-          const deployment = await api<{ status: string; createdAt: string }>(
-            `/api/projects/${project.id}/environments/${environment.id}/deployments/${id}`,
-          );
-          setStatus(deployment.status);
-          setCreatedAt(deployment.createdAt);
+        try {
+          const projects = await api<
+            Array<{
+              id: string;
+              slug: string;
+              environments: Array<{ id: string; type: string }>;
+            }>
+          >("/api/projects");
+          const project = projects.find((p) => p.slug === slug);
+          if (project) {
+            setProjectId(project.id);
+            const environment = project.environments.find(
+              (e) => e.type.toLowerCase() === env.toLowerCase(),
+            );
+            if (environment) {
+              setEnvId(environment.id);
+              const deployment = await api<{
+                status: string;
+                createdAt: string;
+              }>(
+                `/api/projects/${project.id}/environments/${environment.id}/deployments/${id}`,
+              );
+              setStatus(deployment.status);
+              setCreatedAt(deployment.createdAt);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load deployment", err);
+        } finally {
+          setLoading(false);
         }
-      }
-      setLoading(false);
-    });
+      })
+      .catch(() => setLoading(false));
   }, [params]);
 
   useDeploymentStatus((payload) => {
@@ -82,28 +115,49 @@ function DeploymentDetailContent({
     }
   });
 
-  const stepStates = useMemo(() => {
-    const latestPhase = logs[logs.length - 1]?.phase;
-    const finished = ["SUCCESS", "CANCELLED"].includes(status);
+  const stepStates = useMemo<StepState[]>(() => {
     const failed = status === "FAILED";
+    const cancelled = status === "CANCELLED";
 
-    return STEPS.map((step, index) => {
-      const hasLogs = logs.some((l) => (step.phases as readonly string[]).includes(l.phase));
-      const isActive =
-        !finished &&
-        !failed &&
-        (step.phases as readonly string[]).includes(latestPhase ?? "DOCKER_BUILD");
-      const isDone =
-        finished ||
-        STEPS.slice(index + 1).some((s) =>
-          logs.some((l) => (s.phases as readonly string[]).includes(l.phase)),
-        ) ||
-        (hasLogs && !isActive && !failed);
+    return STEPS.map((step) => {
+      if (cancelled) return "done";
 
-      if (failed && isActive) return "failed" as const;
-      if (isDone) return "done" as const;
-      if (isActive) return "active" as const;
-      return "waiting" as const;
+      const isActive = (
+        step.activeStatuses as readonly string[]
+      ).includes(status);
+      const isDone = (step.doneAfter as readonly string[]).includes(status);
+
+      if (isDone) return "done";
+
+      if (failed) {
+        const hasLogPhases =
+          "logPhases" in step &&
+          logs.some((l) =>
+            (step.logPhases as readonly string[]).includes(l.phase),
+          );
+
+        if (step.key === "setup") {
+          const hasBuildLogs = logs.some((l) =>
+            ["DOCKER_BUILD", "DOCKER_PUSH", "PULUMI"].includes(l.phase),
+          );
+          return hasBuildLogs ? "done" : "failed";
+        }
+        if (step.key === "build") {
+          const hasPulumiLogs = logs.some((l) => l.phase === "PULUMI");
+          return hasLogPhases && !hasPulumiLogs
+            ? "failed"
+            : hasLogPhases
+              ? "done"
+              : "waiting";
+        }
+        if (step.key === "deploy") {
+          return hasLogPhases ? "failed" : "waiting";
+        }
+        return "waiting";
+      }
+
+      if (isActive) return "active";
+      return "waiting";
     });
   }, [logs, status]);
 
@@ -128,7 +182,9 @@ function DeploymentDetailContent({
           Back
         </Link>
         <div className="mt-4 flex items-center gap-3">
-          <h1 className="text-base font-semibold">Deployment {deployId.slice(0, 8)}</h1>
+          <h1 className="text-base font-semibold">
+            Deployment {deployId.slice(0, 8)}
+          </h1>
           <StatusBadge status={status} />
         </div>
         <p className="mt-1 text-sm capitalize text-muted-foreground">
@@ -137,7 +193,7 @@ function DeploymentDetailContent({
       </div>
 
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
           {STEPS.map((step, i) => {
             const state = stepStates[i];
             return (
@@ -146,7 +202,10 @@ function DeploymentDetailContent({
                   {state === "done" ? (
                     <Check size={16} className="text-green-500" />
                   ) : state === "active" ? (
-                    <Loader2 size={16} className="animate-spin text-blue-500" />
+                    <Loader2
+                      size={16}
+                      className="animate-spin text-blue-500"
+                    />
                   ) : state === "failed" ? (
                     <X size={16} className="text-red-500" />
                   ) : (
@@ -154,15 +213,21 @@ function DeploymentDetailContent({
                   )}
                   <span
                     className={cn(
-                      "text-xs uppercase",
-                      state === "active" ? "text-white" : "text-zinc-500",
+                      "text-xs uppercase tracking-wide",
+                      state === "active"
+                        ? "text-white"
+                        : state === "done"
+                          ? "text-zinc-400"
+                          : state === "failed"
+                            ? "text-red-400"
+                            : "text-zinc-600",
                     )}
                   >
                     {step.label}
                   </span>
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div className="mb-5 h-px flex-1 bg-zinc-800 last:hidden" />
+                  <div className="mb-5 h-px flex-1 bg-zinc-800" />
                 )}
               </div>
             );
@@ -170,7 +235,11 @@ function DeploymentDetailContent({
         </div>
       </div>
 
-      <DeploymentLogs projectId={projectId} envId={envId} deployId={deployId} />
+      <DeploymentLogs
+        projectId={projectId}
+        envId={envId}
+        deployId={deployId}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 export { BUILDSPEC } from "./buildspec";
-export { ensureCodeBuildProject } from "./setup";
-export type { CodeBuildSetupOptions, CodeBuildSetupResult } from "./setup";
+export { runSetupStack } from "./setup-stack";
+export type { SetupStackOptions, SetupStackOutputs } from "./setup-stack";
 export { startBuildAndStream } from "./build";
 export type { StartBuildOptions, BuildLogCallback } from "./build";
