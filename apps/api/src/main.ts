@@ -6,6 +6,7 @@ import { prisma } from "@heizen/db";
 import { AppModule } from "./app.module";
 import { auth } from "./auth/auth.config";
 import { toNodeHandler } from "better-auth/node";
+import { cleanStaleTempDirs } from "./common/clean-stale-temp-dirs";
 
 const DEFAULT_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"];
 
@@ -43,6 +44,8 @@ function authCorsMiddleware(allowedOrigins: string[]) {
 }
 
 async function bootstrap() {
+  await cleanStaleTempDirs();
+
   const allowedOrigins = getAllowedOrigins();
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,

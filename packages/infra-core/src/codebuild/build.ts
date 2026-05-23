@@ -24,6 +24,7 @@ export interface StartBuildOptions {
 }
 
 const POLL_INTERVAL_MS = 5000;
+const BUILD_TIMEOUT_MS = 30 * 60 * 1000;
 
 export async function startBuildAndStream(
   options: StartBuildOptions,
@@ -55,8 +56,15 @@ export async function startBuildAndStream(
   let build: Build | undefined;
   let lastEventTimestamp = 0;
   let logStreamName: string | undefined;
+  const startTime = Date.now();
 
   while (true) {
+    if (Date.now() - startTime > BUILD_TIMEOUT_MS) {
+      throw new Error(
+        `CodeBuild timed out after 30 minutes. Build ID: ${buildId}`,
+      );
+    }
+
     const batchResult = await codebuild.send(
       new BatchGetBuildsCommand({ ids: [buildId] }),
     );

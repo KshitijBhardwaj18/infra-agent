@@ -34,11 +34,16 @@ export interface SetupStackOutputs {
   roleArn: string;
 }
 
+interface ExistingResources {
+  ecrExists: boolean;
+  roleExists: boolean;
+  rolePolicyExists: boolean;
+  projectExists: boolean;
+}
+
 /**
  * Checks which resources already exist in AWS.
- * Resources created by a previous raw-SDK setup run exist in AWS but not in
- * Pulumi state. We detect them here so we can pass `import` to Pulumi instead
- * of letting it try to CREATE and get EntityAlreadyExists / AlreadyExistsException.
+ * Runs once before Pulumi starts — not during program evaluation.
  */
 async function detectExisting(
   ecrRepoName: string,
@@ -46,7 +51,7 @@ async function detectExisting(
   projectName: string,
   region: string,
   creds: { accessKeyId: string; secretAccessKey: string; sessionToken: string },
-) {
+): Promise<ExistingResources> {
   const ecr = new ECRClient({ region, credentials: creds });
   const iam = new IAMClient({ region, credentials: creds });
   const cb = new CodeBuildClient({ region, credentials: creds });
@@ -84,22 +89,10 @@ function createSetupProgram(opts: {
   roleName: string;
   projectName: string;
   region: string;
-  awsCreds: AwsCredentials;
+  existing: ExistingResources;
 }) {
   return async () => {
-    const creds = {
-      accessKeyId: opts.awsCreds.accessKeyId,
-      secretAccessKey: opts.awsCreds.secretAccessKey,
-      sessionToken: opts.awsCreds.sessionToken,
-    };
-
-    const existing = await detectExisting(
-      opts.ecrRepoName,
-      opts.roleName,
-      opts.projectName,
-      opts.region,
-      creds,
-    );
+    const { existing } = opts;
 
     const ecr = new aws.ecr.Repository(
       "ecr",
@@ -226,6 +219,18 @@ function createSetupProgram(opts: {
 export async function runSetupStack(
   opts: SetupStackOptions,
 ): Promise<SetupStackOutputs> {
+  const existing = await detectExisting(
+    opts.ecrRepoName,
+    opts.roleName,
+    opts.projectName,
+    opts.region,
+    {
+      accessKeyId: opts.awsCreds.accessKeyId,
+      secretAccessKey: opts.awsCreds.secretAccessKey,
+      sessionToken: opts.awsCreds.sessionToken,
+    },
+  );
+
   const envVars: Record<string, string> = {
     AWS_ACCESS_KEY_ID: opts.awsCreds.accessKeyId,
     AWS_SECRET_ACCESS_KEY: opts.awsCreds.secretAccessKey,
@@ -244,7 +249,7 @@ export async function runSetupStack(
         roleName: opts.roleName,
         projectName: opts.projectName,
         region: opts.region,
-        awsCreds: opts.awsCreds,
+        existing,
       }),
     },
     { envVars },

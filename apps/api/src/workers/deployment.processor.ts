@@ -66,6 +66,14 @@ export class DeploymentProcessor extends WorkerHost {
       if (!environment.awsRoleArn || !environment.region) {
         throw new Error("AWS configuration missing");
       }
+      if (!project.githubInstallationId) {
+        throw new Error("GitHub not connected");
+      }
+      if (!project.githubOwner || !project.githubRepo) {
+        throw new Error(
+          "GitHub repository not connected — connect a repo before deploying",
+        );
+      }
 
       const envType = environment.type === "PRODUCTION" ? "production" : "staging";
       const prefix = `${project.slug}-${envType}`;
@@ -152,7 +160,6 @@ export class DeploymentProcessor extends WorkerHost {
       this.gateway.emitDeploymentStatus(orgId, { deploymentId, status: "BUILDING" });
 
       // ── 4. Fresh GitHub installation token (1hr TTL) ─────────────────────
-      if (!project.githubInstallationId) throw new Error("GitHub not connected");
       const ghToken = await this.githubToken.getToken(project.githubInstallationId);
 
       // ── 5. Docker build + push via CodeBuild ─────────────────────────────
@@ -172,8 +179,8 @@ export class DeploymentProcessor extends WorkerHost {
         awsCreds,
         envOverrides: {
           GITHUB_TOKEN: ghToken,
-          GITHUB_OWNER: project.githubOwner!,
-          GITHUB_REPO: project.githubRepo!,
+          GITHUB_OWNER: project.githubOwner,
+          GITHUB_REPO: project.githubRepo,
           COMMIT_SHA: commitSha ?? "HEAD",
           ECR_REGISTRY: ecrRegistry,
           ECR_REPO: ecrRepoName,
@@ -245,13 +252,6 @@ export class DeploymentProcessor extends WorkerHost {
           void this.sse.logAndEmit(deploymentId, "PULUMI", "info", line);
         },
       });
-
-      if (!environment.pulumiStackName) {
-        await this.prisma.environment.update({
-          where: { id: environmentId },
-          data: { pulumiStackName: stackName },
-        });
-      }
 
       // ── 9. Export stack state → save resources for the resource graph ─────
       const exported = await exportStack(

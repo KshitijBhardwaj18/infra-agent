@@ -33,6 +33,18 @@ export class DeploymentsService {
       throw new BadRequestException("AWS configuration required before deploying");
     }
 
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { githubOwner: true, githubRepo: true, githubInstallationId: true },
+    });
+    if (
+      !project?.githubOwner ||
+      !project?.githubRepo ||
+      !project?.githubInstallationId
+    ) {
+      throw new BadRequestException("GitHub repository not connected before deploying");
+    }
+
     const deployment = await this.prisma.deployment.create({
       data: {
         environmentId: envId,
@@ -47,11 +59,19 @@ export class DeploymentsService {
       data: { status: "DEPLOYING" },
     });
 
-    await this.deploymentQueue.add("deploy", {
-      deploymentId: deployment.id,
-      environmentId: envId,
-      projectId,
-    });
+    await this.deploymentQueue.add(
+      "deploy",
+      {
+        deploymentId: deployment.id,
+        environmentId: envId,
+        projectId,
+      },
+      {
+        attempts: 1,
+        removeOnComplete: 50,
+        removeOnFail: 100,
+      },
+    );
 
     return deployment;
   }

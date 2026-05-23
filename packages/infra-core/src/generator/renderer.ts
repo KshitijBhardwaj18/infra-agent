@@ -35,6 +35,15 @@ const TEMPLATE_FILES: Array<{ src: string; dest: string }> = [
 ];
 
 async function installGeneratedDependencies(outputDir: string): Promise<void> {
+  const baseDepsDir = process.env.PULUMI_BASE_DEPS_DIR;
+  if (baseDepsDir) {
+    await fs.symlink(
+      path.join(baseDepsDir, "node_modules"),
+      path.join(outputDir, "node_modules"),
+    );
+    return;
+  }
+
   const env = { ...process.env, NODE_ENV: "production" };
 
   try {
