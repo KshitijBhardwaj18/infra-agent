@@ -10,6 +10,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:clean": "bash scripts/dev-clean.sh",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "db:generate": "turbo run db:generate",

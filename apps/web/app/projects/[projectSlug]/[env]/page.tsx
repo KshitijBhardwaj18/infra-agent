@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { Suspense, useEffect, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Copy, Check, ExternalLink } from "lucide-react";
 import type { HeizenConfig } from "@heizen/shared";
 import { ConnectGitHub } from "@/components/github/ConnectGitHub";
@@ -12,9 +11,11 @@ import { DeployForm } from "@/components/deploy/DeployForm";
 import { DeployingState } from "@/components/deploy/DeployingState";
 import { CostEstimator } from "@/components/deploy/CostEstimator";
 import { ResourceGraph } from "@/components/resources/ResourceGraph";
+import { EnvVarTable } from "@/components/env-vars/EnvVarTable";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import { useSse } from "@/hooks/useSse";
 import { useIndexingComplete, useEnvironmentStatus } from "@/hooks/useWebSocket";
@@ -63,7 +64,28 @@ export default function EnvironmentPage({
 }: {
   params: Promise<{ projectSlug: string; env: string }>;
 }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-5xl space-y-4 p-6">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-32 w-full rounded-lg" />
+        </div>
+      }
+    >
+      <EnvironmentPageContent params={params} />
+    </Suspense>
+  );
+}
+
+function EnvironmentPageContent({
+  params,
+}: {
+  params: Promise<{ projectSlug: string; env: string }>;
+}) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const defaultTab = searchParams.get("tab") === "variables" ? "variables" : "overview";
   const [projectSlug, setProjectSlug] = useState("");
   const [envType, setEnvType] = useState<"staging" | "production">("staging");
   const [project, setProject] = useState<Project | null>(null);
@@ -154,7 +176,7 @@ export default function EnvironmentPage({
 
   if (loading || !project || !environment) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-5xl space-y-4 p-6">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-32 w-full rounded-lg" />
         <Skeleton className="h-64 w-full rounded-lg" />
@@ -186,11 +208,12 @@ export default function EnvironmentPage({
     const appUrl = outputs?.albDnsName ? `https://${outputs.albDnsName}` : null;
 
     return (
-      <div className="space-y-6">
+      <div className="mx-auto max-w-5xl space-y-6 p-6">
         <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <div className="flex items-center gap-3">
             <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
-            <span className="text-sm font-medium">Live</span>
+            <span className="text-sm font-medium capitalize">{envType}</span>
+            <span className="text-sm font-medium text-green-400">Live</span>
             {environment.lastDeployedAt && (
               <span className="text-sm text-muted-foreground">
                 · Last deployed {new Date(environment.lastDeployedAt).toLocaleString()}
@@ -202,79 +225,93 @@ export default function EnvironmentPage({
           </Button>
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-2">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-            <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-              Endpoints
-            </p>
-            {appUrl ? (
-              <div className="mt-3 space-y-2">
-                <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
-                  <a
-                    href={appUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 truncate text-sm text-blue-400 hover:underline"
-                  >
-                    {outputs?.albDnsName}
-                  </a>
-                  <CopyButton value={appUrl} />
-                  <a href={appUrl} target="_blank" rel="noopener noreferrer">
-                    <Button variant="ghost" size="icon-sm">
-                      <ExternalLink size={14} />
-                    </Button>
-                  </a>
-                </div>
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-muted-foreground">No endpoints available yet.</p>
-            )}
-          </div>
+        <Tabs defaultValue={defaultTab}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="variables">
+              Environment Variables
+              {missingEnvCount > 0 && (
+                <span className="ml-1.5 rounded-full bg-yellow-500/20 px-1.5 py-0.5 text-[10px] text-yellow-400">
+                  {missingEnvCount}
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-            <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-              DNS Configuration
-            </p>
-            {environment.heizenConfig.domain && outputs?.albDnsName ? (
-              <div className="mt-3 space-y-3">
-                <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">Type</span>
-                    <Badge variant="outline">CNAME</Badge>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">Name</span>
-                    <span className="font-mono text-xs">{environment.heizenConfig.domain}</span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">Value</span>
-                    <div className="flex items-center gap-1">
-                      <span className="font-mono text-xs">{outputs.albDnsName}</span>
-                      <CopyButton value={outputs.albDnsName} />
+          <TabsContent value="overview" className="space-y-6">
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+                <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+                  Endpoints
+                </p>
+                {appUrl ? (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
+                      <a
+                        href={appUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 truncate text-sm text-blue-400 hover:underline"
+                      >
+                        {outputs?.albDnsName}
+                      </a>
+                      <CopyButton value={appUrl} />
+                      <a href={appUrl} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="icon-sm">
+                          <ExternalLink size={14} />
+                        </Button>
+                      </a>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <p className="mt-3 text-sm text-muted-foreground">No endpoints available yet.</p>
+                )}
               </div>
-            ) : (
-              <p className="mt-3 text-sm text-muted-foreground">
-                No custom domain configured.
+
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+                <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+                  DNS Configuration
+                </p>
+                {environment.heizenConfig.domain && outputs?.albDnsName ? (
+                  <div className="mt-3 space-y-3">
+                    <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Type</span>
+                        <Badge variant="outline">CNAME</Badge>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Name</span>
+                        <span className="font-mono text-xs">{environment.heizenConfig.domain}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Value</span>
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-xs">{outputs.albDnsName}</span>
+                          <CopyButton value={outputs.albDnsName} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    No custom domain configured.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+                Infrastructure
               </p>
-            )}
-          </div>
-        </div>
+              <ResourceGraph resources={resources} />
+            </div>
+          </TabsContent>
 
-        <div>
-          <p className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            Infrastructure
-          </p>
-          <ResourceGraph resources={resources} />
-        </div>
-
-        <Link href={`/projects/${projectSlug}/${envType}/env-vars`}>
-          <Button variant="outline" size="sm">
-            Manage environment variables
-          </Button>
-        </Link>
+          <TabsContent value="variables">
+            <EnvVarTable projectId={project.id} envId={environment.id} />
+          </TabsContent>
+        </Tabs>
 
         {showDeployForm && (
           <DeployForm
@@ -292,7 +329,7 @@ export default function EnvironmentPage({
 
   if (environment.heizenConfig) {
     return (
-      <div>
+      <div className="mx-auto max-w-5xl p-6">
         <div className="grid gap-3 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <IndexingResults
@@ -340,7 +377,7 @@ export default function EnvironmentPage({
   }
 
   return (
-    <div className="flex min-h-[400px] flex-col items-center justify-center text-center">
+    <div className="mx-auto flex min-h-[400px] max-w-5xl flex-col items-center justify-center p-6 text-center">
       <p className="text-sm text-muted-foreground">Repository connected. Ready to analyze.</p>
       <Button size="sm" className="mt-4" onClick={startIndexing}>
         Analyze codebase

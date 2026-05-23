@@ -15,7 +15,7 @@ export async function api<T>(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `API error ${res.status}`);
+    throw new Error(text ? `API error ${res.status}: ${text}` : `API error ${res.status}`);
   }
 
   if (res.status === 204) return undefined as T;

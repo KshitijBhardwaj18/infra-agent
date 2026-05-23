@@ -2,12 +2,25 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Rocket, TestTube2 } from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import {
+  Rocket,
+  TestTube2,
+  ChevronDown,
+  ArrowRight,
+  GitBranch,
+  History,
+} from "lucide-react";
 import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge, StatusDot } from "@/components/ui/status-badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Project {
   id: string;
@@ -15,25 +28,41 @@ interface Project {
   slug: string;
   githubOwner: string | null;
   githubRepo: string | null;
+  githubBranch: string | null;
   environments: Array<{
     id: string;
     type: string;
     status: string;
     lastDeployedAt: string | null;
+    heizenConfig: unknown | null;
   }>;
 }
 
-function StatusDot({ status }: { status: string }) {
-  const color =
-    status === "LIVE"
-      ? "bg-green-500"
-      : status === "FAILED"
-        ? "bg-red-500"
-        : status === "DEPLOYING"
-          ? "bg-blue-500 animate-pulse"
-          : "bg-zinc-500";
+interface DeploymentRow {
+  id: string;
+  status: string;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  envSlug: string;
+}
 
-  return <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", color)} />;
+function timeAgo(date: string) {
+  const diff = Date.now() - new Date(date).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function formatDuration(start?: string | null, end?: string | null) {
+  if (!start) return "—";
+  const endMs = end ? new Date(end).getTime() : Date.now();
+  const secs = Math.floor((endMs - new Date(start).getTime()) / 1000);
+  if (secs < 60) return `${secs}s`;
+  return `${Math.floor(secs / 60)}m ${secs % 60}s`;
 }
 
 export default function ProjectOverviewPage({
@@ -41,25 +70,49 @@ export default function ProjectOverviewPage({
 }: {
   params: Promise<{ projectSlug: string }>;
 }) {
+  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
+  const [deployments, setDeployments] = useState<DeploymentRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     params.then(async ({ projectSlug }) => {
       const projects = await api<Project[]>("/api/projects");
       const p = projects.find((pr) => pr.slug === projectSlug);
-      if (p) setProject(p);
+      if (!p) {
+        setLoading(false);
+        return;
+      }
+      setProject(p);
+
+      const all: DeploymentRow[] = [];
+      for (const env of p.environments) {
+        const list = await api<
+          Array<{
+            id: string;
+            status: string;
+            createdAt: string;
+            startedAt: string | null;
+            completedAt: string | null;
+          }>
+        >(`/api/projects/${p.id}/environments/${env.id}/deployments`);
+        for (const d of list) {
+          all.push({ ...d, envSlug: env.type.toLowerCase() });
+        }
+      }
+      all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setDeployments(all.slice(0, 5));
       setLoading(false);
     });
   }, [params]);
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
+      <div className="mx-auto max-w-5xl space-y-4 p-6">
+        <Skeleton className="h-10 w-64" />
         <div className="grid gap-3 sm:grid-cols-2">
-          <Skeleton className="h-28 rounded-lg" />
-          <Skeleton className="h-28 rounded-lg" />
+          <Skeleton className="h-32 rounded-lg" />
+          <Skeleton className="h-32 rounded-lg" />
         </div>
       </div>
     );
@@ -67,53 +120,127 @@ export default function ProjectOverviewPage({
 
   if (!project) return null;
 
+  const envAction = (env: Project["environments"][0]) => {
+    if (env.status === "LIVE") return "Open";
+    if (env.status === "DEPLOYING") return "View";
+    if (env.heizenConfig) return "Configure";
+    return "Set up";
+  };
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-lg font-semibold">{project.name}</h1>
-        <p className="text-sm text-muted-foreground">
-          {project.githubOwner
-            ? `${project.githubOwner}/${project.githubRepo}`
-            : "GitHub not connected"}
-        </p>
+    <div className="mx-auto max-w-5xl p-6">
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-base font-semibold">{project.name}</h1>
+          <p className="mt-0.5 flex items-center gap-1 text-sm text-muted-foreground">
+            <GitBranch size={12} />
+            {project.githubOwner
+              ? `${project.githubOwner}/${project.githubRepo} · ${project.githubBranch ?? "main"}`
+              : "GitHub not connected"}
+          </p>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground"
+          >
+            Deploy
+            <ChevronDown size={14} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => router.push(`/projects/${project.slug}/production`)}
+            >
+              Deploy to Production
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push(`/projects/${project.slug}/staging`)}>
+              Deploy to Staging
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      <div>
-        <p className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="mb-3 flex items-center gap-3">
+        <span className="text-xs font-semibold uppercase tracking-widest text-zinc-600">
           Environments
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {project.environments.map((env) => {
-            const Icon = env.type === "PRODUCTION" ? Rocket : TestTube2;
-            return (
-              <Link
-                key={env.id}
-                href={`/projects/${project.slug}/${env.type.toLowerCase()}`}
-              >
-                <Card className="cursor-pointer border-zinc-800 bg-zinc-900 p-4 transition-colors hover:border-zinc-700">
-                  <div className="mb-2 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Icon size={15} className="text-zinc-400" />
-                      <h3 className="text-sm font-medium capitalize">
-                        {env.type.toLowerCase()}
-                      </h3>
-                    </div>
-                    <Badge variant="outline" className="gap-1.5 font-normal">
-                      <StatusDot status={env.status} />
-                      {env.status.replace("_", " ").toLowerCase()}
-                    </Badge>
-                  </div>
-                  {env.lastDeployedAt && (
-                    <p className="text-xs text-muted-foreground">
-                      Last deployed: {new Date(env.lastDeployedAt).toLocaleString()}
-                    </p>
-                  )}
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
+        </span>
+        <div className="flex-1 border-t border-zinc-800/50" />
       </div>
+
+      <div className="mb-8 grid gap-3 sm:grid-cols-2">
+        {project.environments.map((env) => {
+          const Icon = env.type === "PRODUCTION" ? Rocket : TestTube2;
+          const slug = env.type.toLowerCase();
+          return (
+            <div
+              key={env.id}
+              className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Icon size={15} className="text-zinc-400" />
+                  <span className="text-sm font-medium capitalize">{slug}</span>
+                </div>
+                <StatusBadge status={env.status} />
+              </div>
+              <p className="mb-4 text-xs text-muted-foreground">
+                {env.lastDeployedAt
+                  ? `Last deployed ${timeAgo(env.lastDeployedAt)}`
+                  : "Never deployed"}
+              </p>
+              <div className="flex gap-2">
+                <Link href={`/projects/${project.slug}/${slug}`}>
+                  <Button size="sm" variant="outline">
+                    {envAction(env)}
+                  </Button>
+                </Link>
+                {env.heizenConfig != null && (
+                  <Link href={`/projects/${project.slug}/${slug}`}>
+                    <Button size="sm">Deploy</Button>
+                  </Link>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mb-3 flex items-center gap-3">
+        <span className="text-xs font-semibold uppercase tracking-widest text-zinc-600">
+          Recent deployments
+        </span>
+        <div className="flex-1 border-t border-zinc-800/50" />
+      </div>
+
+      {deployments.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 py-12 text-center">
+          <History size={20} className="text-zinc-600" />
+          <p className="mt-3 text-sm text-zinc-400">No deployments yet</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-zinc-800">
+          {deployments.map((d) => (
+            <Link
+              key={d.id}
+              href={`/projects/${project.slug}/${d.envSlug}/deployments/${d.id}`}
+              className="flex cursor-pointer items-center gap-3 border-b border-zinc-800/50 px-4 py-3 transition-colors last:border-0 hover:bg-zinc-900/50"
+            >
+              <StatusDot status={d.status} />
+              <span className="text-sm capitalize text-zinc-300">{d.envSlug}</span>
+              <span className="text-xs text-zinc-500">{timeAgo(d.createdAt)}</span>
+              <span className="text-xs text-zinc-600">
+                {formatDuration(d.startedAt ?? d.createdAt, d.completedAt)}
+              </span>
+              <ArrowRight size={14} className="ml-auto text-zinc-600" />
+            </Link>
+          ))}
+          <Link
+            href={`/projects/${project.slug}/deployments`}
+            className="block px-4 py-3 text-xs text-zinc-500 hover:text-zinc-300"
+          >
+            View all deployments →
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

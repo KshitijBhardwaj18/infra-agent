@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,26 +31,28 @@ export default function NewProjectPage() {
   };
 
   return (
-    <AppShell>
-      <div className="mx-auto max-w-lg p-6">
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft size={14} />
-          Back to projects
-        </Link>
+    <div className="mx-auto max-w-5xl p-6">
+      <Link
+        href="/projects"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft size={14} />
+        Back to projects
+      </Link>
 
-        <h1 className="mt-6 text-xl font-semibold">Create a project</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+      <div className="mb-6 mt-6">
+        <h1 className="text-base font-semibold">Create a project</h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">
           Give your project a name to get started.
         </p>
+      </div>
 
-        <form
-          onSubmit={submit}
-          className="mt-8 rounded-lg border border-zinc-800 bg-zinc-900 p-5"
-        >
-          <div>
+      <form
+        onSubmit={submit}
+        className="max-w-lg rounded-lg border border-zinc-800 bg-card p-5"
+      >
+        <div className="space-y-4">
+          <div className="space-y-1.5">
             <Label htmlFor="project-name">Project name</Label>
             <Input
               id="project-name"
@@ -61,20 +62,19 @@ export default function NewProjectPage() {
                 setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
               }}
               required
-              className="mt-1.5"
             />
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               heizen.app/{slug || "your-project-slug"}
             </p>
           </div>
 
-          <Separator className="my-6" />
+          <Separator />
 
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Creating..." : "Create project"}
           </Button>
-        </form>
-      </div>
-    </AppShell>
+        </div>
+      </form>
+    </div>
   );
 }

@@ -9,8 +9,6 @@ interface AppShellProps {
   projectSlug?: string;
   projectName?: string;
   projectId?: string;
-  envType?: string;
-  envLabel?: string;
   showAgent?: boolean;
   githubBranch?: string | null;
 }
@@ -20,19 +18,16 @@ export function AppShell({
   projectSlug,
   projectName,
   projectId,
-  envType,
-  envLabel,
   showAgent = false,
   githubBranch,
 }: AppShellProps) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar projectSlug={projectSlug} envType={envType} />
+      <Sidebar projectSlug={projectSlug} projectName={projectName} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header
           projectSlug={projectSlug}
           projectName={projectName}
-          envLabel={envLabel}
           githubBranch={githubBranch}
         />
         <main className="flex-1 overflow-y-auto">{children}</main>
