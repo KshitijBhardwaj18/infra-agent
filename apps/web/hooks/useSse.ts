@@ -13,6 +13,7 @@ export function useSse<T>(url: string | null, enabled = true) {
     if (!url || !enabled) return;
 
     esRef.current?.close();
+    setData([]);
     const es = new EventSource(apiUrl(url), { withCredentials: true });
     esRef.current = es;
 

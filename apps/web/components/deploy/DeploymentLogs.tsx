@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useSse } from "@/hooks/useSse";
-import type { DeploymentLogPayload } from "@heizen/shared";
+import { api } from "@/lib/api";
+import type { DeploymentLogPayload, DeploymentPhase } from "@heizen/shared";
 
 const PHASES = ["DOCKER_BUILD", "DOCKER_PUSH", "PULUMI", "SYSTEM"] as const;
 
@@ -16,14 +17,41 @@ export function DeploymentLogs({
   envId: string;
   deployId: string;
 }) {
+  const [historicalLogs, setHistoricalLogs] = useState<DeploymentLogPayload[]>([]);
   const url = `/api/projects/${projectId}/environments/${envId}/deployments/${deployId}/logs/stream`;
-  const { data: logs, connected } = useSse<DeploymentLogPayload>(url);
+  const { data: streamLogs, connected } = useSse<DeploymentLogPayload>(url);
+
+  useEffect(() => {
+    api<Array<{ phase: string; level: string; message: string }>>(
+      `/api/projects/${projectId}/environments/${envId}/deployments/${deployId}/logs`,
+    )
+      .then((logs) =>
+        setHistoricalLogs(
+          logs.map((l) => ({
+            phase: l.phase as DeploymentPhase,
+            level: l.level,
+            message: l.message,
+          })),
+        ),
+      )
+      .catch(() => {});
+  }, [projectId, envId, deployId]);
+
+  const allLogs = useMemo(() => {
+    const seen = new Set<string>();
+    return [...historicalLogs, ...streamLogs].filter((l) => {
+      const key = `${l.phase}:${l.message}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [historicalLogs, streamLogs]);
 
   const [activePhase, setActivePhase] = useState<(typeof PHASES)[number]>("DOCKER_BUILD");
 
   const filtered = useMemo(
-    () => logs.filter((l) => l.phase === activePhase),
-    [logs, activePhase],
+    () => allLogs.filter((l) => l.phase === activePhase),
+    [allLogs, activePhase],
   );
 
   return (
@@ -44,6 +72,7 @@ export function DeploymentLogs({
         {PHASES.map((phase) => (
           <button
             key={phase}
+            type="button"
             onClick={() => setActivePhase(phase)}
             className={cn(
               "px-4 py-2 text-sm transition-colors",

@@ -53,7 +53,7 @@ function CopyButton({ value }: { value: string }) {
   };
 
   return (
-    <Button variant="ghost" size="icon-sm" onClick={copy} className="shrink-0">
+    <Button variant="ghost" size="icon" onClick={copy} className="h-7 w-7 shrink-0">
       {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
     </Button>
   );
@@ -184,8 +184,19 @@ function EnvironmentPageContent({
     );
   }
 
-  if (!project.githubOwner || !project.githubInstallationId) {
-    return <ConnectGitHub projectId={project.id} />;
+  if (!project.githubOwner) {
+    return (
+      <ConnectGitHub
+        projectId={project.id}
+        installationId={project.githubInstallationId}
+        environmentId={environment.id}
+        onRepoConnected={() => {
+          setIndexing(true);
+          resetIndexEvents();
+          void load(projectSlug, envType);
+        }}
+      />
+    );
   }
 
   if (indexing) {
@@ -257,7 +268,7 @@ function EnvironmentPageContent({
                       </a>
                       <CopyButton value={appUrl} />
                       <a href={appUrl} target="_blank" rel="noopener noreferrer">
-                        <Button variant="ghost" size="icon-sm">
+                        <Button variant="ghost" size="icon" className="h-7 w-7">
                           <ExternalLink size={14} />
                         </Button>
                       </a>
