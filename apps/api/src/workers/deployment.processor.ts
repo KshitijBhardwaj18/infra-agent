@@ -29,7 +29,7 @@ export interface DeploymentJob {
   projectId: string;
 }
 
-@Processor("deployment", { concurrency: 2 })
+@Processor("deployment", { concurrency: 1 })
 export class DeploymentProcessor extends WorkerHost {
   private readonly logger = new Logger(DeploymentProcessor.name);
 
@@ -83,64 +83,64 @@ export class DeploymentProcessor extends WorkerHost {
         environment.region,
       );
 
-      // ── 2. First-time setup (only runs once per environment) ─────────────
-      if (!environment.setupComplete) {
-        await this.sse.logAndEmit(
-          deploymentId,
-          "SYSTEM",
-          "info",
-          "First-time setup: creating S3 state bucket...",
+      // ── 2. Ensure build infrastructure (idempotent Pulumi setup stack) ───
+      await this.sse.logAndEmit(
+        deploymentId,
+        "SYSTEM",
+        "info",
+        "Ensuring build infrastructure...",
+      );
+
+      const s3 = new S3Client({
+        region: environment.region,
+        credentials: awsCreds,
+      });
+      await ensureStateBucket(s3, stateBucket, environment.region);
+
+      const setup = await runSetupStack({
+        stackName: `${prefix}-setup`,
+        backendBucket: stateBucket,
+        passphrase,
+        region: environment.region,
+        awsCreds,
+        ecrRepoName,
+        roleName,
+        projectName: codebuildProjectName,
+        onOutput: (line) => {
+          void this.sse.logAndEmit(deploymentId, "SYSTEM", "info", line);
+        },
+      });
+
+      await this.prisma.environment.update({
+        where: { id: environmentId },
+        data: {
+          ecrUri: setup.ecrUri,
+          codebuildProjectName: setup.codebuildProjectName,
+          pulumiBackendBucket: stateBucket,
+          pulumiStackName: environment.pulumiStackName ?? prefix,
+          setupComplete: true,
+        },
+      });
+
+      environment.ecrUri = setup.ecrUri;
+      environment.codebuildProjectName = setup.codebuildProjectName;
+      environment.pulumiBackendBucket = stateBucket;
+      environment.pulumiStackName = environment.pulumiStackName ?? prefix;
+      environment.setupComplete = true;
+
+      if (!environment.pulumiBackendBucket) {
+        throw new Error(
+          "Pulumi backend bucket not set. Reset setupComplete=false to re-run setup.",
         );
-
-        const s3 = new S3Client({
-          region: environment.region,
-          credentials: awsCreds,
-        });
-        await ensureStateBucket(s3, stateBucket, environment.region);
-
-        await this.sse.logAndEmit(
-          deploymentId,
-          "SYSTEM",
-          "info",
-          "First-time setup: provisioning ECR, IAM role, and CodeBuild via Pulumi...",
+      }
+      if (!environment.codebuildProjectName) {
+        throw new Error(
+          "CodeBuild project name not set. Reset setupComplete=false to re-run setup.",
         );
-
-        const setup = await runSetupStack({
-          stackName: `${prefix}-setup`,
-          backendBucket: stateBucket,
-          passphrase,
-          region: environment.region,
-          awsCreds,
-          ecrRepoName,
-          roleName,
-          projectName: codebuildProjectName,
-          onOutput: (line) => {
-            void this.sse.logAndEmit(deploymentId, "SYSTEM", "info", line);
-          },
-        });
-
-        await this.prisma.environment.update({
-          where: { id: environmentId },
-          data: {
-            ecrUri: setup.ecrUri,
-            codebuildProjectName: setup.codebuildProjectName,
-            pulumiBackendBucket: stateBucket,
-            pulumiStackName: prefix,
-            setupComplete: true,
-          },
-        });
-
-        environment.ecrUri = setup.ecrUri;
-        environment.codebuildProjectName = setup.codebuildProjectName;
-        environment.pulumiBackendBucket = stateBucket;
-        environment.pulumiStackName = prefix;
-        environment.setupComplete = true;
-
-        await this.sse.logAndEmit(
-          deploymentId,
-          "SYSTEM",
-          "info",
-          "First-time setup complete.",
+      }
+      if (!environment.ecrUri) {
+        throw new Error(
+          "ECR URI not set. Reset setupComplete=false to re-run setup.",
         );
       }
 
@@ -156,8 +156,10 @@ export class DeploymentProcessor extends WorkerHost {
       const ghToken = await this.githubToken.getToken(project.githubInstallationId);
 
       // ── 5. Docker build + push via CodeBuild ─────────────────────────────
-      const commitSha = deployment.commitSha ?? "HEAD";
-      const imageTag = commitSha.slice(0, 7);
+      const commitSha = deployment.commitSha ?? null;
+      const imageTag = commitSha
+        ? commitSha.slice(0, 7)
+        : `deploy-${Date.now()}`;
       const accountId =
         environment.awsAccountId ??
         environment.ecrUri?.split(".")[0] ??
@@ -172,7 +174,7 @@ export class DeploymentProcessor extends WorkerHost {
           GITHUB_TOKEN: ghToken,
           GITHUB_OWNER: project.githubOwner!,
           GITHUB_REPO: project.githubRepo!,
-          COMMIT_SHA: commitSha,
+          COMMIT_SHA: commitSha ?? "HEAD",
           ECR_REGISTRY: ecrRegistry,
           ECR_REPO: ecrRepoName,
           IMAGE_TAG: imageTag,

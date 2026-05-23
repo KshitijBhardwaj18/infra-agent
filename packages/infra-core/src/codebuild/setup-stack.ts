@@ -143,7 +143,7 @@ export async function runSetupStack(
   const stack = await automation.LocalWorkspace.createOrSelectStack(
     {
       stackName: opts.stackName,
-      projectName: `${opts.stackName}-setup`,
+      projectName: opts.stackName,
       program: createSetupProgram({
         ecrRepoName: opts.ecrRepoName,
         roleName: opts.roleName,
