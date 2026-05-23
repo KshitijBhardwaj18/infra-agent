@@ -1,5 +1,18 @@
 import * as automation from "@pulumi/pulumi/automation";
 import * as aws from "@pulumi/aws";
+import {
+  ECRClient,
+  DescribeRepositoriesCommand,
+} from "@aws-sdk/client-ecr";
+import {
+  IAMClient,
+  GetRoleCommand,
+  GetRolePolicyCommand,
+} from "@aws-sdk/client-iam";
+import {
+  CodeBuildClient,
+  BatchGetProjectsCommand,
+} from "@aws-sdk/client-codebuild";
 import { BUILDSPEC } from "./buildspec";
 import type { AwsCredentials } from "../pulumi/aws-role";
 
@@ -22,99 +35,185 @@ export interface SetupStackOutputs {
 }
 
 /**
- * Pulumi inline program that creates the per-environment build infrastructure:
- *   - ECR repository (Docker images)
- *   - IAM role for CodeBuild
- *   - CodeBuild project (docker build + push)
- *
- * Pulumi handles dependency ordering automatically — CodeBuild is only created
- * after the IAM role is ready, eliminating the IAM propagation delay bug.
+ * Checks which resources already exist in AWS.
+ * Resources created by a previous raw-SDK setup run exist in AWS but not in
+ * Pulumi state. We detect them here so we can pass `import` to Pulumi instead
+ * of letting it try to CREATE and get EntityAlreadyExists / AlreadyExistsException.
  */
+async function detectExisting(
+  ecrRepoName: string,
+  roleName: string,
+  projectName: string,
+  region: string,
+  creds: { accessKeyId: string; secretAccessKey: string; sessionToken: string },
+) {
+  const ecr = new ECRClient({ region, credentials: creds });
+  const iam = new IAMClient({ region, credentials: creds });
+  const cb = new CodeBuildClient({ region, credentials: creds });
+
+  const [ecrExists, roleExists, rolePolicyExists, projectExists] =
+    await Promise.all([
+      ecr
+        .send(new DescribeRepositoriesCommand({ repositoryNames: [ecrRepoName] }))
+        .then(() => true)
+        .catch(() => false),
+      iam
+        .send(new GetRoleCommand({ RoleName: roleName }))
+        .then(() => true)
+        .catch(() => false),
+      iam
+        .send(
+          new GetRolePolicyCommand({
+            RoleName: roleName,
+            PolicyName: `${roleName}-policy`,
+          }),
+        )
+        .then(() => true)
+        .catch(() => false),
+      cb
+        .send(new BatchGetProjectsCommand({ names: [projectName] }))
+        .then((r) => (r.projects?.length ?? 0) > 0)
+        .catch(() => false),
+    ]);
+
+  return { ecrExists, roleExists, rolePolicyExists, projectExists };
+}
+
 function createSetupProgram(opts: {
   ecrRepoName: string;
   roleName: string;
   projectName: string;
   region: string;
+  awsCreds: AwsCredentials;
 }) {
   return async () => {
-    const ecr = new aws.ecr.Repository("ecr", {
-      name: opts.ecrRepoName,
-      imageScanningConfiguration: { scanOnPush: true },
-      forceDelete: true,
-    });
+    const creds = {
+      accessKeyId: opts.awsCreds.accessKeyId,
+      secretAccessKey: opts.awsCreds.secretAccessKey,
+      sessionToken: opts.awsCreds.sessionToken,
+    };
 
-    const role = new aws.iam.Role("codebuild-role", {
-      name: opts.roleName,
-      assumeRolePolicy: JSON.stringify({
-        Version: "2012-10-17",
-        Statement: [
-          {
-            Effect: "Allow",
-            Principal: { Service: "codebuild.amazonaws.com" },
-            Action: "sts:AssumeRole",
-          },
-        ],
-      }),
-    });
+    const existing = await detectExisting(
+      opts.ecrRepoName,
+      opts.roleName,
+      opts.projectName,
+      opts.region,
+      creds,
+    );
 
-    new aws.iam.RolePolicy("codebuild-policy", {
-      role: role.id,
-      policy: JSON.stringify({
-        Version: "2012-10-17",
-        Statement: [
-          {
-            Effect: "Allow",
-            Action: [
-              "ecr:GetAuthorizationToken",
-              "ecr:BatchCheckLayerAvailability",
-              "ecr:GetDownloadUrlForLayer",
-              "ecr:BatchGetImage",
-              "ecr:PutImage",
-              "ecr:InitiateLayerUpload",
-              "ecr:UploadLayerPart",
-              "ecr:CompleteLayerUpload",
-            ],
-            Resource: "*",
-          },
-          {
-            Effect: "Allow",
-            Action: [
-              "logs:CreateLogGroup",
-              "logs:CreateLogStream",
-              "logs:PutLogEvents",
-            ],
-            Resource: "*",
-          },
-        ],
-      }),
-    });
-
-    const project = new aws.codebuild.Project("codebuild", {
-      name: opts.projectName,
-      description: `Heizen Docker build for ${opts.projectName}`,
-      serviceRole: role.arn,
-      source: { type: "NO_SOURCE", buildspec: BUILDSPEC },
-      artifacts: { type: "NO_ARTIFACTS" },
-      environment: {
-        type: "LINUX_CONTAINER",
-        computeType: "BUILD_GENERAL1_SMALL",
-        image: "aws/codebuild/standard:7.0",
-        privilegedMode: true,
-        environmentVariables: [
-          {
-            name: "AWS_DEFAULT_REGION",
-            value: opts.region,
-            type: "PLAINTEXT",
-          },
-        ],
+    const ecr = new aws.ecr.Repository(
+      "ecr",
+      {
+        name: opts.ecrRepoName,
+        imageScanningConfiguration: { scanOnPush: true },
+        forceDelete: true,
       },
-      logsConfig: {
-        cloudwatchLogs: {
-          status: "ENABLED",
-          groupName: `/aws/codebuild/${opts.projectName}`,
+      {
+        import: existing.ecrExists ? opts.ecrRepoName : undefined,
+        ignoreChanges: existing.ecrExists
+          ? ["imageScanningConfiguration", "forceDelete", "tags"]
+          : [],
+      },
+    );
+
+    const role = new aws.iam.Role(
+      "codebuild-role",
+      {
+        name: opts.roleName,
+        assumeRolePolicy: JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Effect: "Allow",
+              Principal: { Service: "codebuild.amazonaws.com" },
+              Action: "sts:AssumeRole",
+            },
+          ],
+        }),
+      },
+      {
+        import: existing.roleExists ? opts.roleName : undefined,
+        ignoreChanges: existing.roleExists ? ["assumeRolePolicy", "tags"] : [],
+      },
+    );
+
+    new aws.iam.RolePolicy(
+      "codebuild-policy",
+      {
+        name: `${opts.roleName}-policy`,
+        role: role.id,
+        policy: JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Effect: "Allow",
+              Action: [
+                "ecr:GetAuthorizationToken",
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+                "ecr:PutImage",
+                "ecr:InitiateLayerUpload",
+                "ecr:UploadLayerPart",
+                "ecr:CompleteLayerUpload",
+              ],
+              Resource: "*",
+            },
+            {
+              Effect: "Allow",
+              Action: [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              Resource: "*",
+            },
+          ],
+        }),
+      },
+      {
+        import: existing.rolePolicyExists
+          ? `${opts.roleName}:${opts.roleName}-policy`
+          : undefined,
+        ignoreChanges: existing.rolePolicyExists ? ["policy"] : [],
+      },
+    );
+
+    const project = new aws.codebuild.Project(
+      "codebuild",
+      {
+        name: opts.projectName,
+        description: `Heizen Docker build for ${opts.projectName}`,
+        serviceRole: role.arn,
+        source: { type: "NO_SOURCE", buildspec: BUILDSPEC },
+        artifacts: { type: "NO_ARTIFACTS" },
+        environment: {
+          type: "LINUX_CONTAINER",
+          computeType: "BUILD_GENERAL1_SMALL",
+          image: "aws/codebuild/standard:7.0",
+          privilegedMode: true,
+          environmentVariables: [
+            {
+              name: "AWS_DEFAULT_REGION",
+              value: opts.region,
+              type: "PLAINTEXT",
+            },
+          ],
+        },
+        logsConfig: {
+          cloudwatchLogs: {
+            status: "ENABLED",
+            groupName: `/aws/codebuild/${opts.projectName}`,
+          },
         },
       },
-    });
+      {
+        import: existing.projectExists ? opts.projectName : undefined,
+        ignoreChanges: existing.projectExists
+          ? ["environment", "logsConfig", "tags", "buildTimeout"]
+          : [],
+      },
+    );
 
     return {
       ecrUri: ecr.repositoryUrl,
@@ -124,10 +223,6 @@ function createSetupProgram(opts: {
   };
 }
 
-/**
- * Runs the Pulumi setup stack for a given environment.
- * Idempotent: safe to call multiple times — Pulumi diffs and only makes changes.
- */
 export async function runSetupStack(
   opts: SetupStackOptions,
 ): Promise<SetupStackOutputs> {
@@ -149,6 +244,7 @@ export async function runSetupStack(
         roleName: opts.roleName,
         projectName: opts.projectName,
         region: opts.region,
+        awsCreds: opts.awsCreds,
       }),
     },
     { envVars },
@@ -167,7 +263,8 @@ export async function runSetupStack(
 
   return {
     ecrUri: (outputs.ecrUri?.value as string) ?? "",
-    codebuildProjectName: (outputs.codebuildProjectName?.value as string) ?? "",
+    codebuildProjectName:
+      (outputs.codebuildProjectName?.value as string) ?? "",
     roleArn: (outputs.roleArn?.value as string) ?? "",
   };
 }

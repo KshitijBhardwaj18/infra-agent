@@ -297,7 +297,7 @@ export class DeploymentProcessor extends WorkerHost {
         where: { id: deploymentId },
         data: {
           status: "SUCCESS",
-          stackOutputs,
+          stackOutputs: stackOutputs as object,
           completedAt: new Date(),
         },
       });
@@ -307,7 +307,7 @@ export class DeploymentProcessor extends WorkerHost {
         data: {
           status: "LIVE",
           lastDeployedAt: new Date(),
-          stackOutputs,
+          stackOutputs: stackOutputs as object,
         },
       });
 

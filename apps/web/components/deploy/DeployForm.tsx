@@ -129,10 +129,13 @@ export function DeployForm({
       });
 
       if (envVars.length > 0) {
-        await api(
-          `/api/projects/${projectId}/environments/${environmentId}/env-vars/bulk`,
-          { method: "PUT", body: JSON.stringify({ vars: envVars }) },
-        );
+        const validVars = envVars.filter((v) => v.key.trim().length > 0);
+        if (validVars.length > 0) {
+          await api(
+            `/api/projects/${projectId}/environments/${environmentId}/env-vars/bulk`,
+            { method: "PUT", body: JSON.stringify({ vars: validVars }) },
+          );
+        }
       }
 
       const deployment = await api<{ id: string }>(
