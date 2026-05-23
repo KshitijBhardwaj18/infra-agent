@@ -1,0 +1,83 @@
+{{#if hasAlb}}
+import * as aws from "@pulumi/aws"
+import * as pulumi from "@pulumi/pulumi"
+import { vpc, albSg, publicSubnet1, publicSubnet2 } from "./networking"
+
+const prefix = "{{prefix}}"
+
+// ── ACM Certificate ───────────────────────────────────────────────────────────
+export const cert = new aws.acm.Certificate(`${prefix}-cert`, {
+  domainName:              "{{domain}}",
+  subjectAlternativeNames: ["*.{{domain}}"],
+  validationMethod:        "DNS",
+  tags: { Name: `${prefix}-cert` },
+})
+
+// ── Application Load Balancer ─────────────────────────────────────────────────
+export const alb = new aws.lb.LoadBalancer(`${prefix}-alb`, {
+  loadBalancerType: "application",
+  securityGroups:   [albSg.id],
+  subnets:          [publicSubnet1.id, publicSubnet2.id],
+  enableHttp2:      true,
+  tags: { Name: `${prefix}-alb` },
+})
+
+// ── Target Groups ─────────────────────────────────────────────────────────────
+{{#each servicesWithDomain}}
+export const {{camel name}}Tg = new aws.lb.TargetGroup(`${prefix}-{{name}}-tg`, {
+  port:                 {{port}},
+  protocol:             "HTTP",
+  targetType:           "ip",
+  vpcId:                vpc.id,
+  deregistrationDelay: 30,
+  healthCheck: {
+    enabled:            true,
+    path:               "{{#if healthCheck}}{{healthCheck.path}}{{else}}/{{/if}}",
+    port:               "traffic-port",
+    protocol:           "HTTP",
+    matcher:            "{{#if healthCheck}}{{healthCheck.codes}}{{else}}200-499{{/if}}",
+    interval:           30,
+    timeout:            5,
+    healthyThreshold:   3,
+    unhealthyThreshold: 2,
+  },
+  tags: { Name: `${prefix}-{{name}}-tg` },
+})
+{{/each}}
+
+// ── HTTP → HTTPS Redirect ──────────────────────────────────────────────────────
+const httpListener = new aws.lb.Listener(`${prefix}-http`, {
+  loadBalancerArn: alb.arn,
+  port:            80,
+  protocol:        "HTTP",
+  defaultActions: [{
+    type: "redirect",
+    redirect: { port: "443", protocol: "HTTPS", statusCode: "HTTP_301" },
+  }],
+})
+
+// ── HTTPS Listener ────────────────────────────────────────────────────────────
+const httpsListener = new aws.lb.Listener(`${prefix}-https`, {
+  loadBalancerArn: alb.arn,
+  port:            443,
+  protocol:        "HTTPS",
+  sslPolicy:       "ELBSecurityPolicy-TLS13-1-2-2021-06",
+  certificateArn:  cert.arn,
+  defaultActions: [{
+    type:           "forward",
+    targetGroupArn: {{defaultTargetGroupVar}}.arn,
+  }],
+})
+
+// ── Listener Rules (host-based routing) ──────────────────────────────────────
+{{#each servicesWithDomain}}
+{{#if domain}}
+new aws.lb.ListenerRule(`${prefix}-{{name}}-rule`, {
+  listenerArn: httpsListener.arn,
+  priority:    {{@index}}0,
+  actions:     [{ type: "forward", targetGroupArn: {{camel name}}Tg.arn }],
+  conditions:  [{ hostHeader: { values: ["{{domain}}"] } }],
+})
+{{/if}}
+{{/each}}
+{{/if}}

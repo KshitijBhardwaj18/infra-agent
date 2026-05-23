@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+
+# Bun — commit bun.lock; do NOT ignore it
+# (removed erroneous `.bun.lock` entry that looked like a typo)
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.turbo/
+.cache/
+*.tsbuildinfo
+
+# Environment & secrets — never commit
+.env
+.env.*
+!.env.example
+!.env*.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
+# Logs & coverage
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
+.nyc_output/
+
+# Prisma
+.prisma/
+packages/db/src/generated/
+
+# Local infra / deploy scratch (Pulumi Automation API writes to /tmp on workers)
+/tmp/
+
+# OS & editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Hosting / tooling
+.vercel/
+.pulumi/

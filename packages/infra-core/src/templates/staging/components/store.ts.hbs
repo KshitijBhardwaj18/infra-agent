@@ -1,0 +1,85 @@
+import * as aws from "@pulumi/aws"
+import * as pulumi from "@pulumi/pulumi"
+import {
+  vpc,
+  {{#if natEnabled}}privateSubnet1, privateSubnet2,{{else}}publicSubnet1, publicSubnet2,{{/if}}
+  {{#if needsRdsSg}}rdsSg,{{/if}}
+  {{#if needsRedisSg}}redisSg,{{/if}}
+} from "./networking"
+import * as cfg from "./config"
+
+const prefix = "{{prefix}}"
+
+{{#if hasDatabase}}
+// ── RDS PostgreSQL ────────────────────────────────────────────────────────────
+const dbSubnetGroup = new aws.rds.SubnetGroup(`${prefix}-db-subnets`, {
+  subnetIds: [
+    {{#if natEnabled}}privateSubnet1.id, privateSubnet2.id,{{else}}publicSubnet1.id, publicSubnet2.id,{{/if}}
+  ],
+  tags: { Name: `${prefix}-db-subnets` },
+})
+
+export const db = new aws.rds.Instance(`${prefix}-db`, {
+  engine:              "postgres",
+  engineVersion:       "{{database.engineVersion}}",
+  instanceClass:       "{{database.instanceClass}}",
+  dbName:              "{{database.dbName}}",
+  username:            "{{database.dbUser}}",
+  password:            cfg.dbPassword,
+  dbSubnetGroupName:   dbSubnetGroup.name,
+  vpcSecurityGroupIds: [rdsSg.id],
+  allocatedStorage:    {{database.allocatedStorage}},
+  storageType:         "{{database.storageType}}",
+  storageEncrypted:    {{database.encrypted}},
+  multiAz:             {{database.multiAz}},
+  backupRetentionPeriod: {{database.backupRetentionDays}},
+  deletionProtection:  {{database.deletionProtection}},
+  skipFinalSnapshot:   {{#if database.deletionProtection}}false{{else}}true{{/if}},
+  tags: { Name: `${prefix}-db` },
+})
+{{/if}}
+
+{{#if hasCache}}
+// ── ElastiCache Redis ─────────────────────────────────────────────────────────
+const redisSubnetGroup = new aws.elasticache.SubnetGroup(`${prefix}-redis-subnets`, {
+  subnetIds: [
+    {{#if natEnabled}}privateSubnet1.id, privateSubnet2.id,{{else}}publicSubnet1.id, publicSubnet2.id,{{/if}}
+  ],
+  tags: { Name: `${prefix}-redis-subnets` },
+})
+
+export const redis = new aws.elasticache.Cluster(`${prefix}-redis`, {
+  engine:           "redis",
+  engineVersion:    "{{cache.engineVersion}}",
+  nodeType:         "{{cache.nodeType}}",
+  numCacheNodes:    1,
+  subnetGroupName:  redisSubnetGroup.name,
+  securityGroupIds: [redisSg.id],
+  tags: { Name: `${prefix}-redis` },
+})
+{{/if}}
+
+{{#if hasStorage}}
+// ── S3 Bucket ─────────────────────────────────────────────────────────────────
+export const bucket = new aws.s3.BucketV2(`${prefix}-storage`, {
+  tags: { Name: `${prefix}-storage` },
+})
+
+new aws.s3.BucketVersioningV2(`${prefix}-storage-versioning`, {
+  bucket: bucket.id,
+  versioningConfiguration: { status: "Enabled" },
+})
+
+new aws.s3.BucketServerSideEncryptionConfigurationV2(`${prefix}-storage-encryption`, {
+  bucket: bucket.id,
+  rules: [{ applyServerSideEncryptionByDefault: { sseAlgorithm: "AES256" } }],
+})
+
+new aws.s3.BucketPublicAccessBlock(`${prefix}-storage-public-access`, {
+  bucket:                bucket.id,
+  blockPublicAcls:       true,
+  blockPublicPolicy:     true,
+  ignorePublicAcls:      true,
+  restrictPublicBuckets: true,
+})
+{{/if}}

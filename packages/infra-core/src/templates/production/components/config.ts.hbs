@@ -1,0 +1,13 @@
+import * as pulumi from "@pulumi/pulumi"
+
+const cfg = new pulumi.Config()
+
+{{#if hasDatabase}}
+// DB password is auto-generated on first deploy (stored encrypted in Pulumi state)
+export const dbPassword = cfg.requireSecret("dbPassword")
+{{/if}}
+
+// User-provided env vars (set via heizen platform before deploy)
+{{#each configExports}}
+{{#if (ne configVar "dbPassword")}}export const {{configVar}} = cfg.requireSecret("{{configVar}}")
+{{/if}}{{/each}}
