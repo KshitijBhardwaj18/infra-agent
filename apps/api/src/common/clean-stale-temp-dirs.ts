@@ -16,17 +16,19 @@ export async function cleanStaleTempDirs(): Promise<void> {
     return;
   }
 
-  for (const dir of entries) {
-    if (!dir.startsWith("infra-")) continue;
-
-    const fullPath = path.join(tmpdir, dir);
-    try {
-      const stat = await fs.stat(fullPath);
-      if (now - stat.mtimeMs > TWO_HOURS_MS) {
-        await fs.rm(fullPath, { recursive: true, force: true });
-      }
-    } catch {
-      // ignore missing or permission errors
-    }
-  }
+  await Promise.all(
+    entries
+      .filter((entry) => entry.startsWith("infra-"))
+      .map(async (entry) => {
+        const fullPath = path.join(tmpdir, entry);
+        try {
+          const stat = await fs.stat(fullPath);
+          if (now - stat.mtimeMs > TWO_HOURS_MS) {
+            await fs.rm(fullPath, { recursive: true, force: true });
+          }
+        } catch {
+          // ignore missing or permission errors
+        }
+      }),
+  );
 }

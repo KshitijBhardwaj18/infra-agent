@@ -75,6 +75,10 @@ export class DeploymentProcessor extends WorkerHost {
         );
       }
 
+      const githubOwner = project.githubOwner;
+      const githubRepo = project.githubRepo;
+      const githubInstallationId = project.githubInstallationId;
+
       const envType = environment.type === "PRODUCTION" ? "production" : "staging";
       const prefix = `${project.slug}-${envType}`;
       const stateBucket = `heizen-${project.slug}-${envType}-state`;
@@ -160,7 +164,7 @@ export class DeploymentProcessor extends WorkerHost {
       this.gateway.emitDeploymentStatus(orgId, { deploymentId, status: "BUILDING" });
 
       // ── 4. Fresh GitHub installation token (1hr TTL) ─────────────────────
-      const ghToken = await this.githubToken.getToken(project.githubInstallationId);
+      const ghToken = await this.githubToken.getToken(githubInstallationId);
 
       // ── 5. Docker build + push via CodeBuild ─────────────────────────────
       const commitSha = deployment.commitSha ?? null;
@@ -179,14 +183,13 @@ export class DeploymentProcessor extends WorkerHost {
         awsCreds,
         envOverrides: {
           GITHUB_TOKEN: ghToken,
-          GITHUB_OWNER: project.githubOwner,
-          GITHUB_REPO: project.githubRepo,
+          GITHUB_OWNER: githubOwner,
+          GITHUB_REPO: githubRepo,
           COMMIT_SHA: commitSha ?? "HEAD",
           ECR_REGISTRY: ecrRegistry,
           ECR_REPO: ecrRepoName,
           IMAGE_TAG: imageTag,
           DOCKERFILE_PATH: heizenConfig.dockerfilePath ?? "Dockerfile",
-          CODEBUILD_PROJECT_NAME: environment.codebuildProjectName!,
         },
         onLog: (message, level) => {
           const lower = message.toLowerCase();
