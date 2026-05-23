@@ -3,6 +3,7 @@ import {
   Inject,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { InjectQueue } from "@nestjs/bullmq";
 import type { Queue } from "bullmq";
@@ -28,8 +29,17 @@ export class GithubService {
     return `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(state)}`;
   }
 
-  async handleCallback(projectId: string, installationId: string, orgId: string) {
-    await this.projects.get(orgId, projectId);
+  async handleCallback(userId: string, projectId: string, installationId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+
+    const member = await this.prisma.member.findFirst({
+      where: { userId, organizationId: project.organizationId },
+    });
+    if (!member) throw new ForbiddenException("Not authorized for this project");
+
     return this.prisma.project.update({
       where: { id: projectId },
       data: { githubInstallationId: installationId },

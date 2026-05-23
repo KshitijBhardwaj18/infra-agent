@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import type { Request, Response, NextFunction } from "express";
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import { auth } from "./auth/auth.config";
 import { toNodeHandler } from "better-auth/node";
@@ -42,11 +43,30 @@ function authCorsMiddleware(allowedOrigins: string[]) {
 
 async function bootstrap() {
   const allowedOrigins = getAllowedOrigins();
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
 
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.use("/api/auth", authCorsMiddleware(allowedOrigins));
+
+  // GitHub App post-install redirects sometimes hit the OAuth callback URL instead of
+  // /api/github/callback. Forward those to our install handler before Better Auth runs.
+  expressApp.get("/api/auth/callback/github", (req: Request, res: Response, next: NextFunction) => {
+    if (req.query.installation_id) {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(req.query)) {
+        if (typeof value === "string") params.set(key, value);
+      }
+      res.redirect(`/api/github/callback?${params.toString()}`);
+      return;
+    }
+    next();
+  });
+
   expressApp.all("/api/auth/*", toNodeHandler(auth));
+  // bodyParser is disabled for Better Auth; re-enable JSON parsing for Nest routes.
+  app.useBodyParser("json");
 
   app.enableCors({
     origin: allowedOrigins,

@@ -14,6 +14,7 @@ import { map, type Observable } from "rxjs";
 import { AuthGuard } from "../common/guards/auth.guard";
 import { OrgGuard } from "../common/guards/org.guard";
 import { CurrentOrg } from "../common/decorators/current-org";
+import { CurrentUser } from "../common/decorators/current-user";
 import { GithubService } from "./github.service";
 import { IndexingSseService } from "./indexing-sse.service";
 import type { IndexingSsePayload } from "@heizen/shared";
@@ -32,14 +33,18 @@ export class GithubController {
   }
 
   @Get("github/callback")
-  @UseGuards(AuthGuard, OrgGuard)
+  @UseGuards(AuthGuard)
   async callback(
     @Query("installation_id") installationId: string,
     @Query("state") stateParam: string,
-    @CurrentOrg() orgId: string,
+    @CurrentUser() user: { id: string },
     @Res() res: Response,
   ) {
     const origin = process.env.CORS_ORIGIN ?? "http://localhost:3000";
+
+    if (!installationId) {
+      return res.redirect(`${origin}/dashboard?error=github_install_missing`);
+    }
 
     let projectId: string;
     try {
@@ -51,8 +56,12 @@ export class GithubController {
       return res.redirect(`${origin}/dashboard?error=github_state_invalid`);
     }
 
-    const project = await this.github.handleCallback(projectId, installationId, orgId);
-    return res.redirect(`${origin}/projects/${project.slug}`);
+    try {
+      const project = await this.github.handleCallback(user.id, projectId, installationId);
+      return res.redirect(`${origin}/projects/${project.slug}`);
+    } catch {
+      return res.redirect(`${origin}/dashboard?error=github_install_failed`);
+    }
   }
 
   @Get("projects/:id/github/repos")
