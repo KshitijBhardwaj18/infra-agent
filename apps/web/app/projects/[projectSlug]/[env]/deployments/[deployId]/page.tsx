@@ -2,10 +2,24 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { DeploymentLogs } from "@/components/deploy/DeploymentLogs";
-import { Badge } from "@/components/ui";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useDeploymentStatus } from "@/hooks/useWebSocket";
+
+function StatusDot({ status }: { status: string }) {
+  const color =
+    status === "SUCCESS"
+      ? "bg-green-500"
+      : status === "FAILED"
+        ? "bg-red-500"
+        : "bg-blue-500 animate-pulse";
+
+  return <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", color)} />;
+}
 
 export default function DeploymentPage({
   params,
@@ -18,6 +32,7 @@ export default function DeploymentPage({
   const [projectSlug, setProjectSlug] = useState("");
   const [envType, setEnvType] = useState("");
   const [status, setStatus] = useState("QUEUED");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     params.then(async ({ projectSlug: slug, env, deployId: id }) => {
@@ -42,6 +57,7 @@ export default function DeploymentPage({
           setStatus(deployment.status);
         }
       }
+      setLoading(false);
     });
   }, [params]);
 
@@ -51,8 +67,13 @@ export default function DeploymentPage({
     }
   });
 
-  if (!projectId || !envId) {
-    return <p className="text-[var(--muted)]">Loading...</p>;
+  if (loading || !projectId || !envId) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-96 rounded-lg" />
+      </div>
+    );
   }
 
   return (
@@ -60,20 +81,14 @@ export default function DeploymentPage({
       <div className="flex items-center gap-4">
         <Link
           href={`/projects/${projectSlug}/${envType}`}
-          className="text-sm text-[var(--muted)] hover:text-white"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
+          <ArrowLeft size={14} />
           Back to {envType}
         </Link>
-        <h1 className="text-xl font-bold">Deployment</h1>
-        <Badge
-          variant={
-            status === "SUCCESS"
-              ? "success"
-              : status === "FAILED"
-                ? "error"
-                : "default"
-          }
-        >
+        <h1 className="text-lg font-semibold">Deployment</h1>
+        <Badge variant="outline" className="gap-1.5 font-normal capitalize">
+          <StatusDot status={status} />
           {status.toLowerCase()}
         </Badge>
       </div>

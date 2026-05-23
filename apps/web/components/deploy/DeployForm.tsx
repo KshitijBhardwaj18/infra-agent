@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 import type { HeizenConfig } from "@heizen/shared";
-import { Button, Card, Input, Label } from "@/components/ui";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { CostEstimator } from "./CostEstimator";
 import { api } from "@/lib/api";
 
@@ -80,14 +85,17 @@ export function DeployForm({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border-zinc-800 bg-zinc-900 p-5">
         <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">
+          <h2 className="text-base font-semibold">
             Deploy to {envType} — Step {step}/4
           </h2>
-          <button onClick={onClose} className="text-[var(--muted)] hover:text-white">
-            Close
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-white"
+          >
+            <X size={16} />
           </button>
         </div>
 
@@ -98,6 +106,7 @@ export function DeployForm({
               <Input
                 value={config.region}
                 onChange={(e) => updateConfig({ region: e.target.value })}
+                className="mt-1.5"
               />
             </div>
             <div>
@@ -106,12 +115,13 @@ export function DeployForm({
                 value={config.domain ?? ""}
                 onChange={(e) => updateConfig({ domain: e.target.value })}
                 placeholder="app.example.com"
+                className="mt-1.5"
               />
             </div>
             <div>
               <Label>NAT Gateway</Label>
               <select
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                className="mt-1.5 flex h-8 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 text-sm"
                 value={config.networking.nat}
                 onChange={(e) =>
                   updateConfig({
@@ -128,7 +138,7 @@ export function DeployForm({
               </select>
             </div>
             <CostEstimator config={config} />
-            <Button onClick={() => setStep(2)} className="w-full">
+            <Button size="sm" onClick={() => setStep(2)} className="w-full">
               Next: AWS Access
             </Button>
           </div>
@@ -138,32 +148,40 @@ export function DeployForm({
           <div className="space-y-4">
             <div>
               <Label>AWS Account ID</Label>
-              <Input value={awsAccountId} onChange={(e) => setAwsAccountId(e.target.value)} />
+              <Input
+                value={awsAccountId}
+                onChange={(e) => setAwsAccountId(e.target.value)}
+                className="mt-1.5"
+              />
             </div>
             <div>
               <Label>IAM Role ARN</Label>
-              <Input value={awsRoleArn} onChange={(e) => setAwsRoleArn(e.target.value)} />
+              <Input
+                value={awsRoleArn}
+                onChange={(e) => setAwsRoleArn(e.target.value)}
+                className="mt-1.5"
+              />
             </div>
-            <details className="text-sm text-[var(--muted)]">
-              <summary className="cursor-pointer">How to create the IAM role</summary>
-              <p className="mt-2">
+            <details className="text-sm text-muted-foreground">
+              <summary className="cursor-pointer hover:text-foreground">
+                How to create the IAM role
+              </summary>
+              <p className="mt-2 leading-relaxed">
                 Create an IAM role in your AWS account that trusts the Heizen platform account
                 with an external ID equal to your environment ID. Grant it AdministratorAccess
                 or scoped permissions for ECS, RDS, ElastiCache, S3, ALB, and IAM.
               </p>
             </details>
-            <Button onClick={verifyAws} variant="outline">
-              Test Connection
+            <Button size="sm" onClick={verifyAws} variant="outline">
+              Test connection
             </Button>
-            {verifyResult && (
-              <p className="text-sm text-[var(--success)]">{verifyResult}</p>
-            )}
+            {verifyResult && <p className="text-sm text-green-500">{verifyResult}</p>}
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setStep(1)}>
+              <Button size="sm" variant="outline" onClick={() => setStep(1)}>
                 Back
               </Button>
-              <Button onClick={() => setStep(3)} className="flex-1">
-                Next: Environment Variables
+              <Button size="sm" onClick={() => setStep(3)} className="flex-1">
+                Next: Environment variables
               </Button>
             </div>
           </div>
@@ -171,7 +189,7 @@ export function DeployForm({
 
         {step === 3 && (
           <div className="space-y-4">
-            <p className="text-sm text-[var(--muted)]">
+            <p className="text-sm text-muted-foreground">
               Provide values for secrets detected from .env.example files.
             </p>
             {envVars.map((v, i) => (
@@ -190,18 +208,19 @@ export function DeployForm({
               </div>
             ))}
             <Button
+              size="sm"
               variant="outline"
               onClick={() =>
                 setEnvVars([...envVars, { service: "shared", key: "", value: "" }])
               }
             >
-              Add Variable
+              Add variable
             </Button>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setStep(2)}>
+              <Button size="sm" variant="outline" onClick={() => setStep(2)}>
                 Back
               </Button>
-              <Button onClick={() => setStep(4)} className="flex-1">
+              <Button size="sm" onClick={() => setStep(4)} className="flex-1">
                 Next: Review
               </Button>
             </div>
@@ -210,7 +229,7 @@ export function DeployForm({
 
         {step === 4 && (
           <div className="space-y-4">
-            <div className="rounded-md bg-zinc-900 p-4 text-sm space-y-1">
+            <div className="space-y-1 rounded-md border border-zinc-800 bg-zinc-950 p-4 text-sm">
               <p>Region: {config.region}</p>
               <p>Domain: {config.domain || "None"}</p>
               <p>Services: {config.services.map((s) => s.name).join(", ")}</p>
@@ -218,11 +237,12 @@ export function DeployForm({
               <p>Cache: {config.cache.engine}</p>
             </div>
             <CostEstimator config={config} />
+            <Separator />
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setStep(3)}>
+              <Button size="sm" variant="outline" onClick={() => setStep(3)}>
                 Back
               </Button>
-              <Button onClick={deploy} disabled={deploying} className="flex-1">
+              <Button size="sm" onClick={deploy} disabled={deploying} className="flex-1">
                 {deploying ? "Deploying..." : `Deploy to ${envType}`}
               </Button>
             </div>

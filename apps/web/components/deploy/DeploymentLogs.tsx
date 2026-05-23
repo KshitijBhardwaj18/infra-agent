@@ -32,15 +32,15 @@ export function DeploymentLogs({
         <span
           className={cn(
             "h-2 w-2 rounded-full",
-            connected ? "bg-[var(--success)]" : "bg-[var(--error)]",
+            connected ? "bg-green-500" : "bg-red-500",
           )}
         />
-        <span className="text-sm text-[var(--muted)]">
+        <span className="text-sm text-muted-foreground">
           {connected ? "Live" : "Disconnected"}
         </span>
       </div>
 
-      <div className="flex gap-1 border-b border-[var(--border)]">
+      <div className="flex gap-1 border-b border-zinc-800">
         {PHASES.map((phase) => (
           <button
             key={phase}
@@ -48,8 +48,8 @@ export function DeploymentLogs({
             className={cn(
               "px-4 py-2 text-sm transition-colors",
               activePhase === phase
-                ? "border-b-2 border-[var(--accent)] text-white"
-                : "text-[var(--muted)] hover:text-white",
+                ? "border-b-2 border-white text-white"
+                : "text-muted-foreground hover:text-white",
             )}
           >
             {phase.replace("_", " ")}
@@ -57,13 +57,13 @@ export function DeploymentLogs({
         ))}
       </div>
 
-      <div className="h-96 overflow-y-auto rounded-md bg-black p-4 font-mono text-xs">
+      <div className="h-96 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950 p-4 font-mono text-xs">
         {filtered.map((log, i) => (
           <div
             key={i}
             className={cn(
               "py-0.5",
-              log.level === "error" && "text-[var(--error)]",
+              log.level === "error" && "text-red-400",
               log.level === "info" && "text-zinc-300",
             )}
           >
@@ -71,7 +71,7 @@ export function DeploymentLogs({
           </div>
         ))}
         {filtered.length === 0 && (
-          <span className="text-[var(--muted)]">Waiting for logs...</span>
+          <span className="text-muted-foreground">Waiting for logs...</span>
         )}
       </div>
     </div>

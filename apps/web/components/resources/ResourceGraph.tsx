@@ -55,12 +55,12 @@ export function ResourceGraph({ resources }: { resources: StackResource[] }) {
 
   if (resources.length === 0) {
     return (
-      <p className="text-sm text-[var(--muted)]">No resources deployed yet.</p>
+      <p className="text-sm text-muted-foreground">No resources deployed yet.</p>
     );
   }
 
   return (
-    <div className="h-96 rounded-lg border border-[var(--border)]">
+    <div className="h-96 rounded-lg border border-zinc-800 bg-zinc-900">
       <ReactFlow nodes={nodes} edges={edges} fitView>
         <Background color="#27272a" />
         <Controls />

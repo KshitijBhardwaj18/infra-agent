@@ -31,10 +31,10 @@ export function CostEstimator({ config }: { config: HeizenConfig }) {
   if (config.storage.enabled) total += STORAGE_MONTHLY_COST;
 
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-zinc-900 p-4">
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-[var(--muted)]">Estimated monthly cost</span>
-        <span className="text-2xl font-bold">${total}/mo</span>
+        <span className="text-sm text-muted-foreground">Estimated monthly cost</span>
+        <span className="text-lg font-semibold">${total}/mo</span>
       </div>
     </div>
   );

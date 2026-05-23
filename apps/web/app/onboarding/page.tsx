@@ -2,15 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Input, Label } from "@/components/ui";
+import Link from "next/link";
+import { ArrowLeft, Building2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const [step, setStep] = useState(1);
   const [orgName, setOrgName] = useState("");
   const [orgSlug, setOrgSlug] = useState("");
-  const [projectName, setProjectName] = useState("");
-  const [projectSlug, setProjectSlug] = useState("");
   const [loading, setLoading] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
@@ -21,61 +24,52 @@ export default function OnboardingPage() {
         method: "POST",
         body: JSON.stringify({ name: orgName, slug: orgSlug }),
       });
-      const project = await api<{ slug: string }>("/api/projects", {
-        method: "POST",
-        body: JSON.stringify({ name: projectName, slug: projectSlug }),
-      });
-      router.push(`/projects/${project.slug}`);
+      setStep(2);
+      router.push("/dashboard");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <h1 className="mb-6 text-xl font-semibold">Welcome to Heizen</h1>
-        <form onSubmit={submit} className="space-y-4">
-          <div>
-            <Label>Organization Name</Label>
-            <Input
-              value={orgName}
-              onChange={(e) => {
-                setOrgName(e.target.value);
-                setOrgSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
-              }}
-              required
-            />
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="w-full max-w-md">
+        <div className="mb-8 flex items-center gap-2">
+          <div className={step >= 1 ? "h-1.5 flex-1 rounded-full bg-white" : "h-1.5 flex-1 rounded-full bg-zinc-800"} />
+          <div className={step >= 2 ? "h-1.5 flex-1 rounded-full bg-white" : "h-1.5 flex-1 rounded-full bg-zinc-800"} />
+        </div>
+
+        {step === 1 && (
+          <div className="text-center">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-zinc-900">
+              <Building2 size={28} className="text-zinc-300" />
+            </div>
+            <h1 className="text-xl font-semibold">Set up your workspace</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Your workspace is where you and your team manage projects.
+            </p>
+
+            <form onSubmit={submit} className="mt-8 space-y-4 text-left">
+              <div>
+                <Label htmlFor="org-name">Organisation name</Label>
+                <Input
+                  id="org-name"
+                  value={orgName}
+                  onChange={(e) => {
+                    setOrgName(e.target.value);
+                    setOrgSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
+                  }}
+                  required
+                  className="mt-1.5"
+                />
+              </div>
+              <Button type="submit" disabled={loading} className="w-full">
+                {loading ? "Creating..." : "Continue"}
+              </Button>
+            </form>
           </div>
-          <div>
-            <Label>Organization Slug</Label>
-            <Input value={orgSlug} onChange={(e) => setOrgSlug(e.target.value)} required />
-          </div>
-          <hr className="border-[var(--border)]" />
-          <div>
-            <Label>First Project Name</Label>
-            <Input
-              value={projectName}
-              onChange={(e) => {
-                setProjectName(e.target.value);
-                setProjectSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"));
-              }}
-              required
-            />
-          </div>
-          <div>
-            <Label>Project Slug</Label>
-            <Input
-              value={projectSlug}
-              onChange={(e) => setProjectSlug(e.target.value)}
-              required
-            />
-          </div>
-          <Button type="submit" disabled={loading} className="w-full">
-            {loading ? "Creating..." : "Get Started"}
-          </Button>
-        </form>
-      </Card>
+        )}
+      </div>
     </div>
   );
 }
