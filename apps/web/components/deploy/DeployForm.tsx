@@ -69,18 +69,19 @@ export function DeployForm({
 
   const deploy = async () => {
     if (!awsRoleArn.trim()) {
-      setDeployError("IAM Role ARN is required. Fill it in Step 2.");
+      setDeployError("IAM Role ARN is required.");
       setStep(2);
       return;
     }
     if (!config.region.trim()) {
-      setDeployError("AWS region is required.");
+      setDeployError("Region is required.");
       setStep(1);
       return;
     }
 
     setDeploying(true);
     setDeployError(null);
+
     try {
       await api(`/api/projects/${projectId}/environments/${environmentId}`, {
         method: "PATCH",
@@ -276,7 +277,11 @@ export function DeployForm({
                 {deploying ? "Deploying..." : `Deploy to ${envType}`}
               </Button>
             </div>
-            {deployError && <p className="text-sm text-red-400">{deployError}</p>}
+            {deployError && (
+              <p className="rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                {deployError}
+              </p>
+            )}
           </div>
         )}
       </Card>

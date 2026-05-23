@@ -34,7 +34,9 @@ export function DeployingState({
   envType: string;
   environmentId: string;
 }) {
-  const [active, setActive] = useState<Deployment | null>(null);
+  const [deployId, setDeployId] = useState<string | null>(null);
+  const [deployStatus, setDeployStatus] = useState<string>("QUEUED");
+  const [deployCreatedAt, setDeployCreatedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -42,17 +44,18 @@ export function DeployingState({
       `/api/projects/${projectId}/environments/${environmentId}/deployments`,
     )
       .then((deployments) => {
-        const current =
+        const active =
           deployments.find(
             (d) => !["SUCCESS", "FAILED", "CANCELLED"].includes(d.status),
           ) ?? deployments[0];
-        if (current) setActive(current);
+        if (active) {
+          setDeployId(active.id);
+          setDeployStatus(active.status);
+          if (active.createdAt) setDeployCreatedAt(active.createdAt);
+        }
       })
       .finally(() => setLoading(false));
   }, [projectId, environmentId]);
-
-  const deployStatus = active?.status ?? "QUEUED";
-  const deployId = active?.id ?? null;
 
   const phaseLabel =
     deployStatus === "BUILDING"
@@ -81,7 +84,7 @@ export function DeployingState({
             {deployStatus.replace("_", " ").toLowerCase()}
           </Badge>
           <span className="text-muted-foreground">
-            · Started {active?.createdAt ? timeAgo(active.createdAt) : "just now"}
+            · Started {deployCreatedAt ? timeAgo(deployCreatedAt) : "just now"}
           </span>
         </div>
       )}
