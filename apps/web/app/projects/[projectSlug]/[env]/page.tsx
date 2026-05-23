@@ -8,6 +8,7 @@ import { ConnectGitHub } from "@/components/github/ConnectGitHub";
 import { IndexingProgress } from "@/components/github/IndexingProgress";
 import { IndexingResults } from "@/components/indexing/IndexingResults";
 import { DeployForm } from "@/components/deploy/DeployForm";
+import { DeployingState } from "@/components/deploy/DeployingState";
 import { ResourceGraph } from "@/components/resources/ResourceGraph";
 import { Button, Card, Badge } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -129,6 +130,18 @@ export default function EnvironmentPage({
   // State 2: Indexing running
   if (indexing) {
     return <IndexingProgress events={indexEvents} />;
+  }
+
+  // Deployment in progress
+  if (environment.status === "DEPLOYING") {
+    return (
+      <DeployingState
+        projectId={project.id}
+        projectSlug={projectSlug}
+        envType={envType}
+        environmentId={environment.id}
+      />
+    );
   }
 
   // State 4: Deployed / LIVE

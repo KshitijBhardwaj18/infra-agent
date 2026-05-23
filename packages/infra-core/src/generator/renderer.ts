@@ -1,8 +1,6 @@
 import Handlebars from "handlebars";
 import * as fs from "fs/promises";
 import * as path from "path";
-
-// Resolve templates dir relative to this file (works in both CJS and ESM builds)
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { TemplateContext } from "./types";
@@ -36,6 +34,19 @@ const TEMPLATE_FILES: Array<{ src: string; dest: string }> = [
   { src: "components/compute.ts.hbs", dest: "components/compute.ts" },
 ];
 
+async function installGeneratedDependencies(outputDir: string): Promise<void> {
+  const env = { ...process.env, NODE_ENV: "production" };
+
+  try {
+    await execFileAsync("bun", ["install", "--silent"], { cwd: outputDir, env });
+    return;
+  } catch {
+    // fall back to npm when bun is unavailable (e.g. in minimal containers)
+  }
+
+  await execFileAsync("npm", ["install", "--silent"], { cwd: outputDir, env });
+}
+
 export async function renderTemplates(
   ctx: TemplateContext,
   env: "staging" | "production",
@@ -55,8 +66,5 @@ export async function renderTemplates(
     await fs.writeFile(outputPath, rendered, "utf-8");
   }
 
-  await execFileAsync("npm", ["install", "--silent"], {
-    cwd: outputDir,
-    env: { ...process.env, NODE_ENV: "production" },
-  });
+  await installGeneratedDependencies(outputDir);
 }

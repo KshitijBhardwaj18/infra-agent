@@ -14,14 +14,16 @@ import {
   CreateProjectCommand,
   UpdateProjectCommand,
 } from "@aws-sdk/client-codebuild";
+import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { BUILDSPEC } from "./buildspec";
+import type { AwsCredentials } from "../pulumi/aws-role";
 
 export interface CodeBuildSetupOptions {
   projectName: string;
   ecrRepoName: string;
   roleName: string;
   region: string;
-  platformAccountId: string;
+  awsCreds: AwsCredentials;
 }
 
 export interface CodeBuildSetupResult {
@@ -33,12 +35,18 @@ export interface CodeBuildSetupResult {
 export async function ensureCodeBuildProject(
   options: CodeBuildSetupOptions,
 ): Promise<CodeBuildSetupResult> {
-  const { projectName, ecrRepoName, roleName, region, platformAccountId } =
-    options;
+  const { projectName, ecrRepoName, roleName, region, awsCreds } = options;
 
-  const ecr = new ECRClient({ region });
-  const iam = new IAMClient({ region });
-  const codebuild = new CodeBuildClient({ region });
+  const credentials = {
+    accessKeyId: awsCreds.accessKeyId,
+    secretAccessKey: awsCreds.secretAccessKey,
+    sessionToken: awsCreds.sessionToken,
+  };
+
+  const ecr = new ECRClient({ region, credentials });
+  const iam = new IAMClient({ region, credentials });
+  const codebuild = new CodeBuildClient({ region, credentials });
+  const sts = new STSClient({ region, credentials });
 
   let ecrUri: string;
   try {
@@ -56,7 +64,13 @@ export async function ensureCodeBuildProject(
     ecrUri = created.repository!.repositoryUri!;
   }
 
-  const roleArn = `arn:aws:iam::${platformAccountId}:role/${roleName}`;
+  const identity = await sts.send(new GetCallerIdentityCommand({}));
+  const customerAccountId = identity.Account;
+  if (!customerAccountId) {
+    throw new Error("Failed to resolve customer AWS account ID");
+  }
+
+  const roleArn = `arn:aws:iam::${customerAccountId}:role/${roleName}`;
 
   try {
     await iam.send(new GetRoleCommand({ RoleName: roleName }));

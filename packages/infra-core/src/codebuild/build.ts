@@ -9,6 +9,7 @@ import {
   GetLogEventsCommand,
   DescribeLogStreamsCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
+import type { AwsCredentials } from "../pulumi/aws-role";
 
 export interface BuildLogCallback {
   (message: string, level: string): void;
@@ -17,6 +18,7 @@ export interface BuildLogCallback {
 export interface StartBuildOptions {
   projectName: string;
   region: string;
+  awsCreds: AwsCredentials;
   envOverrides: Record<string, string>;
   onLog: BuildLogCallback;
 }
@@ -26,10 +28,16 @@ const POLL_INTERVAL_MS = 5000;
 export async function startBuildAndStream(
   options: StartBuildOptions,
 ): Promise<{ buildId: string; imageTag: string }> {
-  const { projectName, region, envOverrides, onLog } = options;
+  const { projectName, region, awsCreds, envOverrides, onLog } = options;
 
-  const codebuild = new CodeBuildClient({ region });
-  const logs = new CloudWatchLogsClient({ region });
+  const credentials = {
+    accessKeyId: awsCreds.accessKeyId,
+    secretAccessKey: awsCreds.secretAccessKey,
+    sessionToken: awsCreds.sessionToken,
+  };
+
+  const codebuild = new CodeBuildClient({ region, credentials });
+  const logs = new CloudWatchLogsClient({ region, credentials });
 
   const startResult = await codebuild.send(
     new StartBuildCommand({

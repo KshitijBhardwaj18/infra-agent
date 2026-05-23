@@ -4,7 +4,6 @@ import type { Job } from "bullmq";
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
-import { randomBytes } from "crypto";
 import { S3Client } from "@aws-sdk/client-s3";
 import type { PrismaClient } from "@heizen/db";
 import { PRISMA } from "../prisma/prisma.module";
@@ -99,7 +98,7 @@ export class DeploymentProcessor extends WorkerHost {
           ecrRepoName,
           roleName,
           region: environment.region,
-          platformAccountId: process.env.PLATFORM_AWS_ACCOUNT_ID ?? awsCreds.accessKeyId,
+          awsCreds,
         });
 
         await this.prisma.environment.update({
@@ -108,6 +107,7 @@ export class DeploymentProcessor extends WorkerHost {
             ecrUri: setup.ecrUri,
             codebuildProjectName: setup.codebuildProjectName,
             pulumiBackendBucket: stateBucket,
+            pulumiStackName: prefix,
             setupComplete: true,
           },
         });
@@ -115,6 +115,7 @@ export class DeploymentProcessor extends WorkerHost {
         environment.ecrUri = setup.ecrUri;
         environment.codebuildProjectName = setup.codebuildProjectName;
         environment.pulumiBackendBucket = stateBucket;
+        environment.pulumiStackName = prefix;
         environment.setupComplete = true;
       }
 
@@ -139,6 +140,7 @@ export class DeploymentProcessor extends WorkerHost {
       await startBuildAndStream({
         projectName: environment.codebuildProjectName!,
         region: environment.region,
+        awsCreds,
         envOverrides: {
           GITHUB_TOKEN: ghToken,
           GITHUB_OWNER: project.githubOwner!,
@@ -182,10 +184,6 @@ export class DeploymentProcessor extends WorkerHost {
         }
       }
 
-      if (updatedConfig.database.engine === "postgres") {
-        configSecrets.dbPassword = randomBytes(16).toString("hex");
-      }
-
       const stackName = environment.pulumiStackName ?? prefix;
 
       const upResult = await runPulumiUp({
@@ -195,10 +193,18 @@ export class DeploymentProcessor extends WorkerHost {
         passphrase: process.env.PULUMI_CONFIG_PASSPHRASE ?? "heizen",
         awsCreds,
         configSecrets,
+        needsDbPassword: updatedConfig.database.engine === "postgres",
         onOutput: (line) => {
           void this.sse.logAndEmit(deploymentId, "PULUMI", "info", line);
         },
       });
+
+      if (!environment.pulumiStackName) {
+        await this.prisma.environment.update({
+          where: { id: environmentId },
+          data: { pulumiStackName: stackName },
+        });
+      }
 
       // 10-11. Parse outputs and export stack
       const exported = await exportStack(

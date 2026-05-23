@@ -1,4 +1,5 @@
 import * as pulumi from "@pulumi/pulumi/automation";
+import { randomBytes } from "crypto";
 import type { AwsCredentials } from "./aws-role";
 
 export interface PulumiUpOptions {
@@ -8,11 +9,28 @@ export interface PulumiUpOptions {
   passphrase: string;
   awsCreds: AwsCredentials;
   configSecrets: Record<string, string>;
+  /** When true, preserves existing dbPassword from stack config or generates once on first deploy. */
+  needsDbPassword?: boolean;
   onOutput?: (line: string) => void;
 }
 
 export interface PulumiUpResult {
   outputs: Record<string, unknown>;
+}
+
+function workspaceEnvVars(
+  awsCreds: AwsCredentials,
+  backendBucket: string,
+  passphrase: string,
+): Record<string, string> {
+  return {
+    AWS_ACCESS_KEY_ID: awsCreds.accessKeyId,
+    AWS_SECRET_ACCESS_KEY: awsCreds.secretAccessKey,
+    AWS_SESSION_TOKEN: awsCreds.sessionToken,
+    AWS_DEFAULT_REGION: awsCreds.region,
+    PULUMI_BACKEND_URL: `s3://${backendBucket}`,
+    PULUMI_CONFIG_PASSPHRASE: passphrase,
+  };
 }
 
 export async function runPulumiUp(
@@ -25,38 +43,32 @@ export async function runPulumiUp(
     passphrase,
     awsCreds,
     configSecrets,
+    needsDbPassword,
     onOutput,
   } = options;
 
-  process.env.AWS_ACCESS_KEY_ID = awsCreds.accessKeyId;
-  process.env.AWS_SECRET_ACCESS_KEY = awsCreds.secretAccessKey;
-  process.env.AWS_SESSION_TOKEN = awsCreds.sessionToken;
-  process.env.AWS_DEFAULT_REGION = awsCreds.region;
-  process.env.PULUMI_BACKEND_URL = `s3://${backendBucket}`;
-  process.env.PULUMI_CONFIG_PASSPHRASE = passphrase;
+  const envVars = workspaceEnvVars(awsCreds, backendBucket, passphrase);
+  Object.assign(process.env, envVars);
 
   const stack = await pulumi.LocalWorkspace.createOrSelectStack(
-    {
-      stackName,
-      projectName: stackName.split("/")[0] ?? stackName,
-      program: async () => {
-        // Program runs from generated index.ts via workDir
-      },
-    },
-    {
-      workDir,
-      envVars: {
-        AWS_ACCESS_KEY_ID: awsCreds.accessKeyId,
-        AWS_SECRET_ACCESS_KEY: awsCreds.secretAccessKey,
-        AWS_SESSION_TOKEN: awsCreds.sessionToken,
-        AWS_DEFAULT_REGION: awsCreds.region,
-        PULUMI_BACKEND_URL: `s3://${backendBucket}`,
-        PULUMI_CONFIG_PASSPHRASE: passphrase,
-      },
-    },
+    { stackName, workDir },
+    { envVars },
   );
 
-  for (const [key, value] of Object.entries(configSecrets)) {
+  const secrets = { ...configSecrets };
+
+  if (needsDbPassword) {
+    let dbPassword: string | undefined;
+    try {
+      const existing = await stack.getConfig("dbPassword");
+      dbPassword = existing.value;
+    } catch {
+      // not set yet on first deploy
+    }
+    secrets.dbPassword = dbPassword ?? randomBytes(16).toString("hex");
+  }
+
+  for (const [key, value] of Object.entries(secrets)) {
     await stack.setConfig(key, { value, secret: true });
   }
 
@@ -83,30 +95,12 @@ export async function exportStack(
   passphrase: string,
   awsCreds: AwsCredentials,
 ): Promise<{ resources: StackResourceExport[] }> {
-  process.env.AWS_ACCESS_KEY_ID = awsCreds.accessKeyId;
-  process.env.AWS_SECRET_ACCESS_KEY = awsCreds.secretAccessKey;
-  process.env.AWS_SESSION_TOKEN = awsCreds.sessionToken;
-  process.env.AWS_DEFAULT_REGION = awsCreds.region;
-  process.env.PULUMI_BACKEND_URL = `s3://${backendBucket}`;
-  process.env.PULUMI_CONFIG_PASSPHRASE = passphrase;
+  const envVars = workspaceEnvVars(awsCreds, backendBucket, passphrase);
+  Object.assign(process.env, envVars);
 
   const stack = await pulumi.LocalWorkspace.selectStack(
-    {
-      stackName,
-      projectName: stackName.split("/")[0] ?? stackName,
-      program: async () => {},
-    },
-    {
-      workDir,
-      envVars: {
-        AWS_ACCESS_KEY_ID: awsCreds.accessKeyId,
-        AWS_SECRET_ACCESS_KEY: awsCreds.secretAccessKey,
-        AWS_SESSION_TOKEN: awsCreds.sessionToken,
-        AWS_DEFAULT_REGION: awsCreds.region,
-        PULUMI_BACKEND_URL: `s3://${backendBucket}`,
-        PULUMI_CONFIG_PASSPHRASE: passphrase,
-      },
-    },
+    { stackName, workDir },
+    { envVars },
   );
 
   const exported = await stack.exportStack();
