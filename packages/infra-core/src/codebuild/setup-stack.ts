@@ -84,19 +84,6 @@ async function detectExisting(
   return { ecrExists, roleExists, rolePolicyExists, projectExists };
 }
 
-const CODEBUILD_IGNORE_CHANGES = [
-  "environment",
-  "logsConfig",
-  "tags",
-  "buildTimeout",
-  "cache",
-  "encryptionKey",
-  "badgeEnabled",
-  "queuedTimeout",
-  "artifacts",
-  "source",
-];
-
 async function getManagedResourceTypes(
   stackName: string,
   projectName: string,
@@ -256,7 +243,27 @@ function createSetupProgram(opts: {
       },
       {
         import: importFlags.projectExists ? opts.projectName : undefined,
-        ignoreChanges: awsExisting.projectExists ? CODEBUILD_IGNORE_CHANGES : [],
+        ignoreChanges: awsExisting.projectExists
+          ? [
+              "artifacts",
+              "logsConfig",
+              "environment",
+              "cache",
+              "encryptionKey",
+              "badgeEnabled",
+              "buildTimeout",
+              "queuedTimeout",
+              "tags",
+              "description",
+              "concurrentBuildLimit",
+              "vpcConfig",
+              "fileSystemLocations",
+              "secondaryArtifacts",
+              "secondarySources",
+              "source",
+            ]
+          : [],
+        retainOnDelete: awsExisting.projectExists,
       },
     );
 
