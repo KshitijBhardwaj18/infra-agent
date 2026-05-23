@@ -2,10 +2,13 @@
   "name": "@heizen/db",
   "version": "0.1.0",
   "private": true,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
     "db:generate": "prisma generate",
@@ -13,7 +16,7 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "typecheck": "tsc --noEmit",
-    "build": "echo 'no build for db package'"
+    "build": "tsc"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"

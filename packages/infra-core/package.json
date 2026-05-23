@@ -2,19 +2,37 @@
   "name": "@heizen/infra-core",
   "version": "0.1.0",
   "private": true,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./analyzer": "./src/analyzer/index.ts",
-    "./generator": "./src/generator/index.ts",
-    "./codebuild": "./src/codebuild/index.ts",
-    "./pulumi": "./src/pulumi/index.ts",
-    "./github": "./src/github/token.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./analyzer": {
+      "types": "./dist/analyzer/index.d.ts",
+      "default": "./dist/analyzer/index.js"
+    },
+    "./generator": {
+      "types": "./dist/generator/index.d.ts",
+      "default": "./dist/generator/index.js"
+    },
+    "./codebuild": {
+      "types": "./dist/codebuild/index.d.ts",
+      "default": "./dist/codebuild/index.js"
+    },
+    "./pulumi": {
+      "types": "./dist/pulumi/index.d.ts",
+      "default": "./dist/pulumi/index.js"
+    },
+    "./github": {
+      "types": "./dist/github/token.d.ts",
+      "default": "./dist/github/token.js"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "echo 'no build for infra-core package'"
+    "build": "tsc && cp -R src/templates dist/templates"
   },
   "dependencies": {
     "@heizen/shared": "workspace:*",
