@@ -328,6 +328,7 @@ export async function runSetupStack(
 
   const result = await stack.up({
     onOutput: opts.onOutput ?? (() => {}),
+    refresh: true,
   });
 
   const outputs = result.outputs as Record<

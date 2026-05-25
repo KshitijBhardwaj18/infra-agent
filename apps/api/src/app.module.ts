@@ -10,7 +10,6 @@ import { EnvironmentsModule } from "./environments/environments.module";
 import { EnvVarsModule } from "./env-vars/env-vars.module";
 import { DeploymentsModule } from "./deployments/deployments.module";
 import { ResourcesModule } from "./resources/resources.module";
-import { AgentModule } from "./agent/agent.module";
 import { WorkersModule } from "./workers/workers.module";
 import { WebsocketModule } from "./websocket/websocket.module";
 import { EncryptionService } from "./common/services/encryption.service";
@@ -32,7 +31,6 @@ import { EncryptionService } from "./common/services/encryption.service";
     EnvVarsModule,
     DeploymentsModule,
     ResourcesModule,
-    AgentModule,
     WorkersModule,
     WebsocketModule,
   ],

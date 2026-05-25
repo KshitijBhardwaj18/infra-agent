@@ -11,9 +11,4 @@ phases:
   post_build:
     commands:
       - docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
-logs:
-  cloudwatch:
-    status: ENABLED
-    group-name: /aws/codebuild/$CODEBUILD_PROJECT_NAME
-    stream-name: $CODEBUILD_BUILD_ID
 `;
