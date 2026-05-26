@@ -32,17 +32,8 @@ export class DeploymentsService {
     if (!env.awsRoleArn || !env.region) {
       throw new BadRequestException("AWS configuration required before deploying");
     }
-
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      select: { githubOwner: true, githubRepo: true, githubInstallationId: true },
-    });
-    if (
-      !project?.githubOwner ||
-      !project?.githubRepo ||
-      !project?.githubInstallationId
-    ) {
-      throw new BadRequestException("GitHub repository not connected before deploying");
+    if (!env.imageUri) {
+      throw new BadRequestException("Docker image URI not configured");
     }
 
     const deployment = await this.prisma.deployment.create({

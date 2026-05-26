@@ -42,6 +42,7 @@ export class EnvironmentsService {
       region?: string;
       domain?: string;
       heizenConfig?: unknown;
+      imageUri?: string;
     },
   ) {
     await this.get(orgId, projectId, envId);

@@ -52,6 +52,7 @@ export class EnvironmentsController {
       region?: string;
       domain?: string;
       heizenConfig?: unknown;
+      imageUri?: string;
     },
   ) {
     return this.environments.update(orgId, projectId, envId, body);

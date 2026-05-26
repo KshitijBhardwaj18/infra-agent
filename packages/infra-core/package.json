@@ -17,10 +17,6 @@
       "types": "./dist/generator/index.d.ts",
       "default": "./dist/generator/index.js"
     },
-    "./codebuild": {
-      "types": "./dist/codebuild/index.d.ts",
-      "default": "./dist/codebuild/index.js"
-    },
     "./pulumi": {
       "types": "./dist/pulumi/index.d.ts",
       "default": "./dist/pulumi/index.js"
@@ -37,10 +33,6 @@
   "dependencies": {
     "@heizen/shared": "workspace:*",
     "@ai-sdk/anthropic": "^1.0.0",
-    "@aws-sdk/client-cloudwatch-logs": "^3.693.0",
-    "@aws-sdk/client-codebuild": "^3.693.0",
-    "@aws-sdk/client-ecr": "^3.693.0",
-    "@aws-sdk/client-iam": "^3.693.0",
     "@aws-sdk/client-s3": "^3.693.0",
     "@aws-sdk/client-sts": "^3.693.0",
     "@octokit/auth-app": "^7.1.1",

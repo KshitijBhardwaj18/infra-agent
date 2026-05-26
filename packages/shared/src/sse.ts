@@ -1,10 +1,8 @@
 import type { HeizenConfig } from "./heizen-config";
 
-export type DeploymentPhase = "DOCKER_BUILD" | "DOCKER_PUSH" | "PULUMI" | "SYSTEM";
+export type DeploymentPhase = "PULUMI" | "SYSTEM";
 export type DeploymentStatus =
   | "QUEUED"
-  | "BUILDING"
-  | "PUSHING"
   | "DEPLOYING"
   | "SUCCESS"
   | "FAILED"

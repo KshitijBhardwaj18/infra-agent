@@ -15,11 +15,6 @@ const colors: Record<
   NOT_DEPLOYED: { dot: "bg-zinc-600", text: "text-zinc-400", bg: "bg-zinc-800" },
   QUEUED: { dot: "bg-zinc-500", text: "text-zinc-400", bg: "bg-zinc-800" },
   CANCELLED: { dot: "bg-zinc-500", text: "text-zinc-400", bg: "bg-zinc-800" },
-  BUILDING: {
-    dot: "bg-blue-500 animate-pulse",
-    text: "text-blue-400",
-    bg: "bg-blue-500/10",
-  },
 };
 
 function normalizeStatus(status: string) {

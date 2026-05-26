@@ -6,7 +6,7 @@ import { useSse } from "@/hooks/useSse";
 import { api } from "@/lib/api";
 import type { DeploymentLogPayload, DeploymentPhase } from "@heizen/shared";
 
-const PHASES = ["DOCKER_BUILD", "DOCKER_PUSH", "PULUMI", "SYSTEM"] as const;
+const PHASES = ["PULUMI", "SYSTEM"] as const;
 
 export function DeploymentLogs({
   projectId,
@@ -47,7 +47,7 @@ export function DeploymentLogs({
     });
   }, [historicalLogs, streamLogs]);
 
-  const [activePhase, setActivePhase] = useState<(typeof PHASES)[number]>("DOCKER_BUILD");
+  const [activePhase, setActivePhase] = useState<(typeof PHASES)[number]>("PULUMI");
 
   const filtered = useMemo(
     () => allLogs.filter((l) => l.phase === activePhase),

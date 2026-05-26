@@ -17,21 +17,13 @@ const STEPS = [
     key: "setup",
     label: "Setup",
     activeStatuses: ["QUEUED"],
-    doneAfter: ["BUILDING", "DEPLOYING", "SUCCESS"],
-  },
-  {
-    key: "build",
-    label: "Build",
-    activeStatuses: ["BUILDING"],
     doneAfter: ["DEPLOYING", "SUCCESS"],
-    logPhases: ["DOCKER_BUILD", "DOCKER_PUSH"] as const,
   },
   {
     key: "deploy",
     label: "Deploy",
     activeStatuses: ["DEPLOYING"],
     doneAfter: ["SUCCESS"],
-    logPhases: ["PULUMI"] as const,
   },
 ] as const;
 
@@ -130,27 +122,12 @@ function DeploymentDetailContent({
       if (isDone) return "done";
 
       if (failed) {
-        const hasLogPhases =
-          "logPhases" in step &&
-          logs.some((l) =>
-            (step.logPhases as readonly string[]).includes(l.phase),
-          );
-
         if (step.key === "setup") {
-          const hasBuildLogs = logs.some((l) =>
-            ["DOCKER_BUILD", "DOCKER_PUSH", "PULUMI"].includes(l.phase),
-          );
-          return hasBuildLogs ? "done" : "failed";
-        }
-        if (step.key === "build") {
           const hasPulumiLogs = logs.some((l) => l.phase === "PULUMI");
-          return hasLogPhases && !hasPulumiLogs
-            ? "failed"
-            : hasLogPhases
-              ? "done"
-              : "waiting";
+          return hasPulumiLogs ? "done" : "failed";
         }
         if (step.key === "deploy") {
+          const hasLogPhases = logs.some((l) => l.phase === "PULUMI");
           return hasLogPhases ? "failed" : "waiting";
         }
         return "waiting";

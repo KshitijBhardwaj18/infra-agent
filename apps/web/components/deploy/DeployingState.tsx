@@ -66,12 +66,10 @@ export function DeployingState({
 
   const phaseLabel =
     deployStatus === "QUEUED"
-      ? "Setting up build infrastructure"
-      : deployStatus === "BUILDING"
-        ? "Building Docker image"
-        : deployStatus === "DEPLOYING"
-          ? "Deploying infrastructure"
-          : "Preparing deployment";
+      ? "Waiting to start..."
+      : deployStatus === "DEPLOYING"
+        ? "Deploying infrastructure"
+        : "Preparing";
 
   return (
     <div className="mx-auto mt-16 max-w-sm rounded-lg border border-zinc-800 bg-zinc-900 p-5">

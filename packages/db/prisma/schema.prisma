@@ -115,8 +115,7 @@ model Environment {
   domain               String?
   pulumiStackName      String?
   pulumiBackendBucket  String?
-  ecrUri               String?
-  codebuildProjectName String?
+  imageUri             String?
   setupComplete        Boolean         @default(false)
   heizenConfig         Json?
   stackOutputs         Json?
@@ -152,9 +151,7 @@ model Deployment {
   triggeredBy    String
   commitSha      String?
   commitMessage  String?
-  dockerfilePath String?
-  ecrUri         String?
-  imageTag       String?
+  imageUri       String?
   status         DeploymentStatus @default(QUEUED)
   errorMessage   String?
   stackOutputs   Json?
@@ -212,8 +209,6 @@ enum EnvironmentStatus {
 
 enum DeploymentStatus {
   QUEUED
-  BUILDING
-  PUSHING
   DEPLOYING
   SUCCESS
   FAILED
@@ -221,8 +216,6 @@ enum DeploymentStatus {
 }
 
 enum DeploymentPhase {
-  DOCKER_BUILD
-  DOCKER_PUSH
   PULUMI
   SYSTEM
 }
