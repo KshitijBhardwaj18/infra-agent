@@ -7,7 +7,7 @@ import {
 {{#if hasDatabase}}import { db } from "./store"
 {{/if}}{{#if hasCache}}import { redis } from "./store"
 {{/if}}{{#if hasStorage}}import { bucket } from "./store"
-{{/if}}{{#if hasAlb}}import { {{#each servicesWithDomain}}{{camel name}}Tg{{#unless @last}}, {{/unless}}{{/each}} } from "./loadbalancer"
+{{/if}}{{#if hasAlb}}import { {{#each servicesWithPort}}{{camel name}}Tg{{#unless @last}}, {{/unless}}{{/each}} } from "./loadbalancer"
 {{/if}}import * as cfg from "./config"
 
 const prefix = "{{prefix}}"
@@ -149,12 +149,12 @@ export const {{camel name}}Service = new aws.ecs.Service(`${prefix}-{{name}}`, {
     securityGroups: [ecsSg.id],
     assignPublicIp: {{#if ../natEnabled}}false{{else}}true{{/if}},
   },
-  {{#if hasDomain}}loadBalancers: [{
+  {{#if ../hasAlb}}{{#if targetGroupVar}}loadBalancers: [{
     targetGroupArn: {{targetGroupVar}}.arn,
     containerName:  "app",
     containerPort:  {{port}},
   }],
-  {{/if}}deploymentCircuitBreaker: { enable: true, rollback: true },
+  {{/if}}{{/if}}deploymentCircuitBreaker: { enable: true, rollback: true },
   enableExecuteCommand: true,
   forceNewDeployment:   true,
   tags: { Name: `${prefix}-{{name}}` },

@@ -13,8 +13,8 @@ export const alb = new aws.lb.LoadBalancer(`${prefix}-alb`, {
   tags: { Name: `${prefix}-alb` },
 })
 
-// ── Target Groups ─────────────────────────────────────────────────────────────
-{{#each servicesWithDomain}}
+// ── Target Groups (one per HTTP service) ──────────────────────────────────────
+{{#each servicesWithPort}}
 export const {{camel name}}Tg = new aws.lb.TargetGroup(`${prefix}-{{name}}-tg`, {
   port:                {{port}},
   protocol:            "HTTP",
@@ -36,7 +36,7 @@ export const {{camel name}}Tg = new aws.lb.TargetGroup(`${prefix}-{{name}}-tg`, 
 })
 {{/each}}
 
-// ── HTTP Listener ─────────────────────────────────────────────────────────────
+// ── HTTP Listener — routes to default service by default ──────────────────────
 export const httpListener = new aws.lb.Listener(`${prefix}-http`, {
   loadBalancerArn: alb.arn,
   port:            80,
@@ -47,7 +47,7 @@ export const httpListener = new aws.lb.Listener(`${prefix}-http`, {
   }],
 })
 
-// ── Host-based routing rules (one per service with a domain) ──────────────────
+// ── Host-based routing (only for services with a custom domain) ───────────────
 {{#each servicesWithDomain}}
 {{#if domain}}
 new aws.lb.ListenerRule(`${prefix}-{{name}}-rule`, {

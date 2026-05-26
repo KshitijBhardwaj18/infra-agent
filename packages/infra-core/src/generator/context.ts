@@ -109,13 +109,14 @@ export function buildTemplateContext(
       envFromNodeEnv: receivesInfraEnv,
       pulumiAllSources,
       pulumiDestructure,
-      targetGroupVar: hasDomain ? `${camelize(s.name)}Tg` : null,
+      targetGroupVar: s.port !== null ? `${camelize(s.name)}Tg` : null,
       healthCheck: s.healthCheck,
     };
   });
 
   const servicesWithDomain = services.filter((s) => s.hasDomain);
-  const hasAlb = cfg.loadBalancer.enabled && servicesWithDomain.length > 0;
+  const servicesWithPort = services.filter((s) => s.port !== null);
+  const hasAlb = cfg.loadBalancer.enabled;
 
   const ports = services
     .map((s) => s.port)
@@ -133,10 +134,13 @@ export function buildTemplateContext(
     }
   }
 
-  const defaultTargetGroupVar =
-    servicesWithDomain.find((s) => s.isFrontend)?.targetGroupVar ??
-    servicesWithDomain[0]?.targetGroupVar ??
-    "";
+  const defaultService =
+    servicesWithPort.find((s) => s.isFrontend) ??
+    servicesWithPort.find((s) => s.isBackend) ??
+    servicesWithPort[0];
+  const defaultTargetGroupVar = defaultService
+    ? `${camelize(defaultService.name)}Tg`
+    : "";
 
   return {
     prefix,
@@ -181,6 +185,7 @@ export function buildTemplateContext(
       : null,
     services,
     servicesWithDomain,
+    servicesWithPort,
     defaultTargetGroupVar,
     configExports,
     logRetentionDays: cfg.env === "production" ? 90 : 7,

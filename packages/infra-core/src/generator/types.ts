@@ -69,6 +69,7 @@ export interface TemplateContext {
   } | null;
   services: ServiceCtx[];
   servicesWithDomain: ServiceCtx[];
+  servicesWithPort: ServiceCtx[];
   defaultTargetGroupVar: string;
   configExports: ConfigVar[];
   logRetentionDays: number;
