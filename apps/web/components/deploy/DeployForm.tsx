@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { HeizenConfig } from "@heizen/shared";
-import { X, Copy, Check } from "lucide-react";
+import type {
+  HeizenConfig,
+  ServiceConfig,
+  ServiceType,
+  DbSize,
+  CacheSize,
+  NatMode,
+} from "@heizen/shared";
+import { FARGATE_CPU_OPTIONS, formatMemoryMb } from "@heizen/shared";
+import { X, Copy, Check, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,6 +28,274 @@ interface Props {
   onClose: () => void;
 }
 
+const DB_SIZES: { value: DbSize; label: string }[] = [
+  { value: "micro", label: "Micro   (~$15/mo)" },
+  { value: "small", label: "Small   (~$30/mo)" },
+  { value: "medium", label: "Medium  (~$60/mo)" },
+  { value: "large", label: "Large   (~$120/mo)" },
+];
+
+const CACHE_SIZES: { value: CacheSize; label: string }[] = [
+  { value: "micro", label: "Micro  (~$13/mo)" },
+  { value: "small", label: "Small  (~$26/mo)" },
+  { value: "medium", label: "Medium (~$52/mo)" },
+];
+
+const DEFAULT_SERVICE: ServiceConfig = {
+  name: "app",
+  type: "backend",
+  port: 3000,
+  cpu: 256,
+  memory: 512,
+  scaling: { min: 1, max: 3, cpuTarget: 70 },
+  command: "node dist/main.js",
+  healthCheck: { path: "/health", codes: "200" },
+};
+
+const LEGACY_CPU: Record<string, { cpu: number; memory: number }> = {
+  small: { cpu: 256, memory: 512 },
+  medium: { cpu: 512, memory: 1024 },
+  large: { cpu: 1024, memory: 2048 },
+};
+
+function normalizeConfig(cfg: HeizenConfig): HeizenConfig {
+  return {
+    ...cfg,
+    services: cfg.services.map((service) => {
+      const rawCpu = service.cpu as unknown;
+      if (typeof rawCpu === "string" && rawCpu in LEGACY_CPU) {
+        const legacy = LEGACY_CPU[rawCpu]!;
+        return {
+          ...service,
+          cpu: legacy.cpu,
+          memory: service.memory ?? legacy.memory,
+        };
+      }
+      return {
+        ...service,
+        memory: service.memory ?? 512,
+      };
+    }),
+  };
+}
+
+interface ServiceCardProps {
+  service: ServiceConfig;
+  onUpdate: (patch: Partial<ServiceConfig>) => void;
+  onRemove?: () => void;
+}
+
+function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  const cpuOption =
+    FARGATE_CPU_OPTIONS.find((o) => o.cpu === service.cpu) ??
+    FARGATE_CPU_OPTIONS[0]!;
+
+  const isWorker = service.type === "worker";
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <Input
+          value={service.name}
+          onChange={(e) => onUpdate({ name: e.target.value })}
+          className="h-7 w-28 text-xs font-mono"
+          placeholder="service-name"
+        />
+        <select
+          value={service.type}
+          onChange={(e) => {
+            const type = e.target.value as ServiceType;
+            onUpdate({
+              type,
+              port: type === "worker" ? undefined : (service.port ?? 3000),
+            });
+          }}
+          className="h-7 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+        >
+          <option value="backend">backend</option>
+          <option value="frontend">frontend</option>
+          <option value="worker">worker</option>
+        </select>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="text-xs text-zinc-500 hover:text-zinc-300"
+        >
+          {expanded ? "▲ less" : "▼ more"}
+        </button>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-zinc-600 hover:text-red-400"
+            aria-label="Remove service"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 border-t border-zinc-800/50 px-3 pb-3 pt-2">
+        {!isWorker && (
+          <div>
+            <p className="mb-1 text-xs text-zinc-500">
+              Port{" "}
+              {service.port === undefined ? (
+                <span className="text-amber-500">⚠ required</span>
+              ) : null}
+            </p>
+            <Input
+              type="number"
+              value={service.port ?? ""}
+              onChange={(e) =>
+                onUpdate({
+                  port: e.target.value ? Number(e.target.value) : undefined,
+                })
+              }
+              placeholder="3000"
+              className="h-7 text-xs font-mono"
+            />
+          </div>
+        )}
+        <div className={isWorker ? "col-span-2" : ""}>
+          <p className="mb-1 text-xs text-zinc-500">Start command</p>
+          <Input
+            value={service.command}
+            onChange={(e) => onUpdate({ command: e.target.value })}
+            placeholder="node dist/main.js"
+            className="h-7 text-xs font-mono"
+          />
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="space-y-3 border-t border-zinc-800/50 px-3 pb-3 pt-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="mb-1 text-xs text-zinc-500">vCPU</p>
+              <select
+                value={service.cpu}
+                onChange={(e) => {
+                  const cpu = Number(e.target.value);
+                  const opt = FARGATE_CPU_OPTIONS.find((o) => o.cpu === cpu)!;
+                  const mem = (opt.memoryOptions as readonly number[]).includes(
+                    service.memory,
+                  )
+                    ? service.memory
+                    : opt.memoryOptions[0]!;
+                  onUpdate({ cpu, memory: mem });
+                }}
+                className="flex h-7 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+              >
+                {FARGATE_CPU_OPTIONS.map((o) => (
+                  <option key={o.cpu} value={o.cpu}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <p className="mb-1 text-xs text-zinc-500">Memory</p>
+              <select
+                value={service.memory}
+                onChange={(e) => onUpdate({ memory: Number(e.target.value) })}
+                className="flex h-7 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+              >
+                {cpuOption.memoryOptions.map((mb) => (
+                  <option key={mb} value={mb}>
+                    {formatMemoryMb(mb)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <p className="mb-1 text-xs text-zinc-500">Min</p>
+              <Input
+                type="number"
+                value={service.scaling.min}
+                onChange={(e) =>
+                  onUpdate({
+                    scaling: { ...service.scaling, min: Number(e.target.value) },
+                  })
+                }
+                className="h-7 text-xs"
+              />
+            </div>
+            <div>
+              <p className="mb-1 text-xs text-zinc-500">Max</p>
+              <Input
+                type="number"
+                value={service.scaling.max}
+                onChange={(e) =>
+                  onUpdate({
+                    scaling: { ...service.scaling, max: Number(e.target.value) },
+                  })
+                }
+                className="h-7 text-xs"
+              />
+            </div>
+            <div>
+              <p className="mb-1 text-xs text-zinc-500">CPU target %</p>
+              <Input
+                type="number"
+                value={service.scaling.cpuTarget}
+                onChange={(e) =>
+                  onUpdate({
+                    scaling: {
+                      ...service.scaling,
+                      cpuTarget: Number(e.target.value),
+                    },
+                  })
+                }
+                className="h-7 text-xs"
+              />
+            </div>
+          </div>
+          {!isWorker && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="mb-1 text-xs text-zinc-500">Health check path</p>
+                <Input
+                  value={service.healthCheck?.path ?? "/health"}
+                  onChange={(e) =>
+                    onUpdate({
+                      healthCheck: {
+                        path: e.target.value,
+                        codes: service.healthCheck?.codes ?? "200",
+                      },
+                    })
+                  }
+                  className="h-7 text-xs font-mono"
+                />
+              </div>
+              <div>
+                <p className="mb-1 text-xs text-zinc-500">Success codes</p>
+                <Input
+                  value={service.healthCheck?.codes ?? "200"}
+                  onChange={(e) =>
+                    onUpdate({
+                      healthCheck: {
+                        path: service.healthCheck?.path ?? "/health",
+                        codes: e.target.value,
+                      },
+                    })
+                  }
+                  className="h-7 text-xs"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DeployForm({
   projectId,
   environmentId,
@@ -29,7 +305,9 @@ export function DeployForm({
   onClose,
 }: Props) {
   const [step, setStep] = useState(1);
-  const [config, setConfig] = useState<HeizenConfig>(initialConfig);
+  const [config, setConfig] = useState<HeizenConfig>(() =>
+    normalizeConfig(initialConfig),
+  );
   const [awsAccountId, setAwsAccountId] = useState("");
   const [awsRoleArn, setAwsRoleArn] = useState("");
   const [verifyResult, setVerifyResult] = useState<string | null>(null);
@@ -75,7 +353,9 @@ export function DeployForm({
         }
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [projectId, environmentId]);
 
   const goToStep = (n: number) => {
@@ -85,6 +365,26 @@ export function DeployForm({
 
   const updateConfig = (patch: Partial<HeizenConfig>) =>
     setConfig((c) => ({ ...c, ...patch }));
+
+  const updateService = (index: number, patch: Partial<ServiceConfig>) =>
+    updateConfig({
+      services: config.services.map((s, i) =>
+        i === index ? { ...s, ...patch } : s,
+      ),
+    });
+
+  const addService = () =>
+    updateConfig({
+      services: [
+        ...config.services,
+        { ...DEFAULT_SERVICE, name: `service-${config.services.length + 1}` },
+      ],
+    });
+
+  const removeService = (index: number) =>
+    updateConfig({
+      services: config.services.filter((_, i) => i !== index),
+    });
 
   const verifyAws = async () => {
     setVerifyResult(null);
@@ -155,6 +455,10 @@ export function DeployForm({
     }
   };
 
+  const missingPorts = config.services.some(
+    (s) => s.type !== "worker" && !s.port,
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border-zinc-800 bg-zinc-900 p-5">
@@ -177,44 +481,217 @@ export function DeployForm({
         )}
 
         {step === 1 && (
-          <div className="space-y-4">
-            <div>
-              <Label>Region</Label>
-              <Input
-                value={config.region}
-                onChange={(e) => updateConfig({ region: e.target.value })}
-                className="mt-1.5"
-              />
+          <div className="space-y-6">
+            <div className="rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2.5 text-xs text-zinc-400">
+              {missingPorts
+                ? "⚠ Ports were not detected — fill them in below before deploying."
+                : "Review and edit your configuration. All fields are customizable."}
             </div>
-            <div>
-              <Label>Domain</Label>
-              <Input
-                value={config.domain ?? ""}
-                onChange={(e) => updateConfig({ domain: e.target.value })}
-                placeholder="app.example.com"
-                className="mt-1.5"
-              />
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Services</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addService}
+                  className="gap-1.5 text-xs"
+                >
+                  <Plus size={12} /> Add Service
+                </Button>
+              </div>
+
+              {config.services.map((service, idx) => (
+                <ServiceCard
+                  key={idx}
+                  service={service}
+                  onUpdate={(patch) => updateService(idx, patch)}
+                  onRemove={
+                    config.services.length > 1 ? () => removeService(idx) : undefined
+                  }
+                />
+              ))}
             </div>
-            <div>
-              <Label>NAT Gateway</Label>
-              <select
-                className="mt-1.5 flex h-8 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 text-sm"
-                value={config.networking.nat}
-                onChange={(e) =>
-                  updateConfig({
-                    networking: {
-                      ...config.networking,
-                      nat: e.target.value as HeizenConfig["networking"]["nat"],
-                    },
-                  })
-                }
-              >
-                <option value="none">None ($0)</option>
-                <option value="single">Single ($35)</option>
-                <option value="dual">Dual HA ($70)</option>
-              </select>
+
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Infrastructure</p>
+
+              <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="db-toggle"
+                    checked={config.database.engine === "postgres"}
+                    onChange={(e) =>
+                      updateConfig({
+                        database: {
+                          ...config.database,
+                          engine: e.target.checked ? "postgres" : "none",
+                        },
+                      })
+                    }
+                    className="h-3.5 w-3.5 rounded"
+                  />
+                  <label htmlFor="db-toggle" className="cursor-pointer text-sm font-medium">
+                    PostgreSQL
+                  </label>
+                </div>
+                {config.database.engine === "postgres" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="mb-1 text-xs text-zinc-500">Instance size</p>
+                      <select
+                        value={config.database.size ?? "micro"}
+                        onChange={(e) =>
+                          updateConfig({
+                            database: {
+                              ...config.database,
+                              size: e.target.value as DbSize,
+                            },
+                          })
+                        }
+                        className="flex h-8 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+                      >
+                        {DB_SIZES.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <p className="mb-1 text-xs text-zinc-500">DB name</p>
+                      <Input
+                        value={config.database.dbName ?? ""}
+                        onChange={(e) =>
+                          updateConfig({
+                            database: { ...config.database, dbName: e.target.value },
+                          })
+                        }
+                        placeholder="myapp_db"
+                        className="h-8 text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="redis-toggle"
+                    checked={config.cache.engine === "redis"}
+                    onChange={(e) =>
+                      updateConfig({
+                        cache: { engine: e.target.checked ? "redis" : "none" },
+                      })
+                    }
+                    className="h-3.5 w-3.5 rounded"
+                  />
+                  <label htmlFor="redis-toggle" className="cursor-pointer text-sm font-medium">
+                    Redis
+                  </label>
+                </div>
+                {config.cache.engine === "redis" && (
+                  <select
+                    value={config.cache.size ?? "micro"}
+                    onChange={(e) =>
+                      updateConfig({
+                        cache: { ...config.cache, size: e.target.value as CacheSize },
+                      })
+                    }
+                    className="flex h-8 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+                  >
+                    {CACHE_SIZES.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <div className="flex flex-1 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    id="s3-toggle"
+                    checked={config.storage.enabled}
+                    onChange={(e) =>
+                      updateConfig({ storage: { enabled: e.target.checked } })
+                    }
+                    className="h-3.5 w-3.5 rounded"
+                  />
+                  <label htmlFor="s3-toggle" className="cursor-pointer text-sm">
+                    S3 Storage
+                  </label>
+                </div>
+                <div className="flex flex-1 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    id="alb-toggle"
+                    checked={config.loadBalancer.enabled}
+                    onChange={(e) =>
+                      updateConfig({ loadBalancer: { enabled: e.target.checked } })
+                    }
+                    className="h-3.5 w-3.5 rounded"
+                  />
+                  <label htmlFor="alb-toggle" className="cursor-pointer text-sm">
+                    Load Balancer
+                  </label>
+                </div>
+              </div>
             </div>
+
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Networking</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Region</Label>
+                  <Input
+                    value={config.region}
+                    onChange={(e) => updateConfig({ region: e.target.value })}
+                    className="mt-1 h-8 text-xs"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">NAT Gateway</Label>
+                  <select
+                    value={config.networking.nat}
+                    onChange={(e) =>
+                      updateConfig({
+                        networking: {
+                          ...config.networking,
+                          nat: e.target.value as NatMode,
+                        },
+                      })
+                    }
+                    className="mt-1 flex h-8 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+                  >
+                    <option value="none">None ($0/mo)</option>
+                    <option value="single">Single NAT (~$35/mo)</option>
+                    <option value="dual">Dual HA NAT (~$70/mo)</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">
+                  Domain <span className="text-zinc-500">(optional)</span>
+                </Label>
+                <Input
+                  value={config.domain ?? ""}
+                  onChange={(e) =>
+                    updateConfig({ domain: e.target.value || undefined })
+                  }
+                  placeholder="app.example.com"
+                  className="mt-1 h-8 text-xs"
+                />
+              </div>
+            </div>
+
             <CostEstimator config={config} />
+
             <Button size="sm" onClick={() => goToStep(2)} className="w-full">
               Next: AWS Access
             </Button>

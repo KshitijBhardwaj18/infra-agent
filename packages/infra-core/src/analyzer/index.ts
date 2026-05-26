@@ -6,7 +6,6 @@ import { shallowClone } from "./clone";
 import { collectFiles } from "./collect";
 import { buildConfigFromStatic } from "./config-builder";
 import { staticAnalysis } from "./static";
-import { classifyEnvVarsWithLlm } from "./llm";
 
 export type IndexingStepCallback = (step: string, data?: unknown) => void;
 
@@ -38,8 +37,7 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzerResult> 
 
     onStep?.("analyzing");
     const config = buildConfigFromStatic(staticResult, projectName, env);
-    const envVars = await classifyEnvVarsWithLlm(files, staticResult);
-    const result = { config, envVars };
+    const result = { config };
 
     onStep?.("complete", result);
     return result;

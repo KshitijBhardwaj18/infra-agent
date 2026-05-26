@@ -32,21 +32,13 @@ export function buildConfigFromStatic(
     },
     loadBalancer: { enabled: hasFrontend },
     services: staticResult.services.map((service) => {
-      const base = {
+      return {
         name: service.name,
         type: service.type,
         cpu: defaults.service.cpu,
+        memory: defaults.service.memory,
         scaling: { ...defaults.service.scaling },
         command: service.command,
-      };
-
-      if (service.type === "worker") {
-        return base;
-      }
-
-      return {
-        ...base,
-        port: service.port ?? 3000,
         ...(service.type === "backend"
           ? { healthCheck: { path: "/health", codes: "200" } }
           : {}),

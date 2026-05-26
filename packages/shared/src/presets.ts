@@ -1,11 +1,4 @@
-import type { CacheSize, CpuSize, DbSize, NatMode } from "./heizen-config";
-
-export interface CpuPreset {
-  cpu: string;
-  memory: string;
-  label: string;
-  monthlyCost: number;
-}
+import type { CacheSize, DbSize, NatMode } from "./heizen-config";
 
 export interface DbPreset {
   instanceClass: string;
@@ -18,12 +11,6 @@ export interface CachePreset {
   label: string;
   monthlyCost: number;
 }
-
-export const CPU_PRESETS: Record<CpuSize, CpuPreset> = {
-  small: { cpu: "256", memory: "512", label: "0.25 vCPU / 0.5 GB", monthlyCost: 8 },
-  medium: { cpu: "512", memory: "1024", label: "0.5 vCPU / 1 GB", monthlyCost: 18 },
-  large: { cpu: "1024", memory: "2048", label: "1 vCPU / 2 GB", monthlyCost: 36 },
-};
 
 export const DB_PRESETS: Record<DbSize, DbPreset> = {
   micro: { instanceClass: "db.t4g.micro", label: "2 vCPU / 1 GB", monthlyCost: 15 },
@@ -46,3 +33,10 @@ export const NAT_COSTS: Record<NatMode, number> = {
 
 export const ALB_MONTHLY_COST = 18;
 export const STORAGE_MONTHLY_COST = 3;
+
+/** Rough monthly Fargate cost estimate from CPU units and memory MB. */
+export function estimateFargateMonthlyCost(cpu: number, memory: number): number {
+  const vcpu = cpu / 1024;
+  const gb = memory / 1024;
+  return Math.round(vcpu * 30 + gb * 3);
+}

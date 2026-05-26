@@ -1,18 +1,31 @@
 import { z } from "zod";
 
-export type CpuSize = "small" | "medium" | "large";
 export type DbSize = "micro" | "small" | "medium" | "large";
 export type CacheSize = "micro" | "small" | "medium";
 export type NatMode = "none" | "single" | "dual";
 export type ServiceType = "backend" | "frontend" | "worker";
 export type EnvType = "staging" | "production";
 
+/** Valid Fargate CPU/memory combinations. Memory in MB. */
+export const FARGATE_CPU_OPTIONS = [
+  { cpu: 256, label: "0.25 vCPU", memoryOptions: [512, 1024, 2048] },
+  { cpu: 512, label: "0.5 vCPU", memoryOptions: [1024, 2048, 3072, 4096] },
+  { cpu: 1024, label: "1 vCPU", memoryOptions: [2048, 3072, 4096, 5120, 6144, 7168, 8192] },
+  { cpu: 2048, label: "2 vCPU", memoryOptions: [4096, 5120, 6144, 7168, 8192, 9216, 10240, 11264, 12288, 13312, 14336, 15360, 16384] },
+  { cpu: 4096, label: "4 vCPU", memoryOptions: [8192, 9216, 10240, 11264, 12288, 13312, 14336, 15360, 16384, 17408, 18432, 19456, 20480, 21504, 22528, 23552, 24576, 25600, 26624, 27648, 28672, 29696, 30720] },
+] as const;
+
+export function formatMemoryMb(mb: number): string {
+  return mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`;
+}
+
 export interface ServiceConfig {
   name: string;
   type: ServiceType;
   port?: number;
   domain?: string;
-  cpu: CpuSize;
+  cpu: number;
+  memory: number;
   scaling: { min: number; max: number; cpuTarget: number };
   command: string;
   healthCheck?: { path: string; codes: string };
@@ -59,14 +72,18 @@ export interface HeizenEnvConfig {
   env: Record<string, Record<string, string>>;
 }
 
-// ───────────────────────── zod schemas (LLM analyzer) ─────────────────────────
+export const STAGING_SERVICE_DEFAULTS = { cpu: 256, memory: 512 } as const;
+export const PRODUCTION_SERVICE_DEFAULTS = { cpu: 512, memory: 1024 } as const;
+
+// ───────────────────────── zod schemas ─────────────────────────
 
 export const serviceConfigSchema = z.object({
   name: z.string().min(1),
   type: z.enum(["backend", "frontend", "worker"]),
   port: z.number().int().positive().optional(),
   domain: z.string().optional(),
-  cpu: z.enum(["small", "medium", "large"]),
+  cpu: z.number().int().positive(),
+  memory: z.number().int().positive(),
   scaling: z.object({
     min: z.number().int().min(0),
     max: z.number().int().min(1),
@@ -114,22 +131,8 @@ export const heizenConfigSchema = z.object({
   storage: z.object({ enabled: z.boolean() }),
 });
 
-/**
- * Schema returned by the analyzer LLM. It tags each detected env var so the
- * platform can show users which ones it will auto-generate and which they
- * must provide.
- */
-export const analyzerEnvVarSchema = z.object({
-  service: z.string(),
-  key: z.string(),
-  classification: z.enum(["auto_generated", "needs_user_input"]),
-  description: z.string().optional(),
-});
-
 export const analyzerResultSchema = z.object({
   config: heizenConfigSchema,
-  envVars: z.array(analyzerEnvVarSchema),
 });
 
-export type AnalyzerEnvVar = z.infer<typeof analyzerEnvVarSchema>;
 export type AnalyzerResult = z.infer<typeof analyzerResultSchema>;

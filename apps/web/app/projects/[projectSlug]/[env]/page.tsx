@@ -46,6 +46,36 @@ interface EnvVar {
   dismissed: boolean;
 }
 
+function buildDefaultHeizenConfig(
+  projectSlug: string,
+  envType: "staging" | "production",
+): HeizenConfig {
+  return {
+    version: 1,
+    project: projectSlug,
+    env: envType,
+    region: "us-east-1",
+    ecr: { image: "", tag: "latest" },
+    networking: { nat: "none", vpcCidr: "10.0.0.0/16" },
+    loadBalancer: { enabled: false },
+    services: [
+      {
+        name: "app",
+        type: "backend",
+        port: 3000,
+        cpu: 256,
+        memory: 512,
+        scaling: { min: 1, max: 3, cpuTarget: 70 },
+        command: "node dist/main.js",
+        healthCheck: { path: "/health", codes: "200" },
+      },
+    ],
+    database: { engine: "none" },
+    cache: { engine: "none" },
+    storage: { enabled: false },
+  };
+}
+
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -382,7 +412,10 @@ function EnvironmentPageContent({
             projectId={project.id}
             environmentId={environment.id}
             envType={envType}
-            initialConfig={environment.heizenConfig}
+            initialConfig={
+              environment.heizenConfig ??
+              buildDefaultHeizenConfig(projectSlug, envType)
+            }
             onDeploy={handleDeploy}
             onClose={() => setShowDeployForm(false)}
           />
@@ -452,7 +485,10 @@ function EnvironmentPageContent({
             projectId={project.id}
             environmentId={environment.id}
             envType={envType}
-            initialConfig={environment.heizenConfig}
+            initialConfig={
+              environment.heizenConfig ??
+              buildDefaultHeizenConfig(projectSlug, envType)
+            }
             onDeploy={handleDeploy}
             onClose={() => setShowDeployForm(false)}
           />
@@ -467,9 +503,26 @@ function EnvironmentPageContent({
         <h2 className="mb-2 text-base font-semibold">Repository connected</h2>
         <p className="mb-6 text-sm text-muted-foreground">
           Ready to analyse your codebase and detect your infrastructure needs.
+          You can also deploy directly with default settings.
         </p>
-        <Button onClick={startIndexing}>Analyse Codebase</Button>
+        <div className="flex flex-col gap-2">
+          <Button onClick={startIndexing}>Analyse Codebase</Button>
+          <Button variant="outline" onClick={() => setShowDeployForm(true)}>
+            Deploy without indexing
+          </Button>
+        </div>
       </div>
+
+      {showDeployForm && (
+        <DeployForm
+          projectId={project.id}
+          environmentId={environment.id}
+          envType={envType}
+          initialConfig={buildDefaultHeizenConfig(projectSlug, envType)}
+          onDeploy={handleDeploy}
+          onClose={() => setShowDeployForm(false)}
+        />
+      )}
     </div>
   );
 }

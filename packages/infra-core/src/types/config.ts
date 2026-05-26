@@ -3,29 +3,28 @@ export type {
   ServiceConfig,
   HeizenEnvConfig,
   EnvType,
-  CpuSize,
   DbSize,
   CacheSize,
   NatMode,
   ServiceType,
   AnalyzerResult,
-  AnalyzerEnvVar,
 } from "@heizen/shared";
 
 export {
   heizenConfigSchema,
   analyzerResultSchema,
-  analyzerEnvVarSchema,
   serviceConfigSchema,
+  FARGATE_CPU_OPTIONS,
+  formatMemoryMb,
 } from "@heizen/shared";
 
 export {
-  CPU_PRESETS,
   DB_PRESETS,
   CACHE_PRESETS,
   NAT_COSTS,
   ALB_MONTHLY_COST,
   STORAGE_MONTHLY_COST,
+  estimateFargateMonthlyCost,
 } from "@heizen/shared";
 
 export {

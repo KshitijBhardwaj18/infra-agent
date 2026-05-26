@@ -84,7 +84,7 @@ function SecretRow({
   onDeleteConfirm?: (id: string) => Promise<void>;
   onDeleteCancel?: () => void;
 }) {
-  const [editing, setEditing] = useState(isSuggestion && !secret.hasValue);
+  const [editing, setEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [show, setShow] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -371,10 +371,15 @@ function SecretsContent() {
 
   const reloadVars = async () => {
     if (!project || !activeEnvironment) return;
-    const data = await api<EnvVar[]>(
-      `/api/projects/${project.id}/environments/${activeEnvironment.id}/env-vars`,
-    );
-    setVars(data);
+    try {
+      const data = await api<EnvVar[]>(
+        `/api/projects/${project.id}/environments/${activeEnvironment.id}/env-vars`,
+      );
+      setVars(data);
+    } catch {
+      // Reload failed after mutation — stale UI is acceptable,
+      // the action (save/delete/dismiss) already completed successfully.
+    }
   };
 
   const handleSave = async (varId: string, value: string) => {

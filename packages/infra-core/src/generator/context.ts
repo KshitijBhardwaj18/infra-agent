@@ -1,6 +1,6 @@
 import type { HeizenConfig } from "../types/config";
 import type { HeizenEnvConfig } from "../types/env-config";
-import { CPU_PRESETS, DB_PRESETS, CACHE_PRESETS } from "../types/presets";
+import { DB_PRESETS, CACHE_PRESETS } from "../types/presets";
 import type { TemplateContext, ServiceCtx, ConfigVar } from "./types";
 
 function camelize(str: string): string {
@@ -33,7 +33,6 @@ export function buildTemplateContext(
   }
 
   const services: ServiceCtx[] = cfg.services.map((s) => {
-    const cpuPreset = CPU_PRESETS[s.cpu];
     const isBackend = s.type === "backend";
     const isFrontend = s.type === "frontend";
     const isWorker = s.type === "worker";
@@ -92,8 +91,8 @@ export function buildTemplateContext(
       port: s.port ?? null,
       domain: s.domain ?? null,
       command: parseCommand(s.command),
-      cpuValue: cpuPreset.cpu,
-      memoryValue: cpuPreset.memory,
+      cpuValue: String(s.cpu),
+      memoryValue: String(s.memory),
       isBackend,
       isFrontend,
       isWorker,

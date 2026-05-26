@@ -3,7 +3,6 @@ import type { CollectedFiles } from "./collect";
 export interface StaticService {
   name: string;
   type: "backend" | "frontend" | "worker";
-  port?: number;
   command: string;
   envKeys: string[];
 }
@@ -17,7 +16,6 @@ export interface StaticAnalysis {
     s3: boolean;
   };
   dockerfilePath: string;
-  exposePorts: number[];
 }
 
 const POSTGRES_PACKAGES = [
@@ -59,25 +57,6 @@ function parseEnvKeys(content: string): string[] {
     .filter(Boolean);
 }
 
-function parseExposePorts(dockerfile?: string): number[] {
-  if (!dockerfile) return [];
-  const ports: number[] = [];
-  const regex = /^EXPOSE\s+(\d+)/gim;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(dockerfile)) !== null) {
-    ports.push(Number(match[1]));
-  }
-  return ports;
-}
-
-function parsePortFromEnv(content: string): number | undefined {
-  for (const line of content.split("\n")) {
-    const match = line.match(/^PORT\s*=\s*(\d+)/);
-    if (match) return Number(match[1]);
-  }
-  return undefined;
-}
-
 function collectAllDeps(files: CollectedFiles): Set<string> {
   const deps = new Set<string>();
   const addDeps = (pkg: Record<string, unknown>) => {
@@ -102,7 +81,6 @@ function collectAllDeps(files: CollectedFiles): Set<string> {
 
 export function staticAnalysis(files: CollectedFiles): StaticAnalysis {
   const allDeps = collectAllDeps(files);
-  const exposePorts = parseExposePorts(files.dockerfile);
 
   const services: StaticService[] = [];
 
@@ -113,14 +91,10 @@ export function staticAnalysis(files: CollectedFiles): StaticAnalysis {
     const type = detectServiceType(content);
     const envExample = files.appEnvExamples.find((e) => e.app === app);
     const envKeys = envExample ? parseEnvKeys(envExample.content) : [];
-    const portFromEnv = envExample
-      ? parsePortFromEnv(envExample.content)
-      : undefined;
 
     services.push({
       name: app,
       type,
-      port: type !== "worker" ? (portFromEnv ?? exposePorts[0] ?? 3000) : undefined,
       command: scripts.start,
       envKeys,
     });
@@ -135,6 +109,5 @@ export function staticAnalysis(files: CollectedFiles): StaticAnalysis {
       s3: S3_PACKAGES.some((p) => allDeps.has(p)),
     },
     dockerfilePath: files.dockerfile ? "Dockerfile" : "Dockerfile",
-    exposePorts,
   };
 }

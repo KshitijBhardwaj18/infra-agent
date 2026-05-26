@@ -2,19 +2,19 @@
 
 import type { HeizenConfig } from "@heizen/shared";
 import {
-  CPU_PRESETS,
   DB_PRESETS,
   CACHE_PRESETS,
   NAT_COSTS,
   ALB_MONTHLY_COST,
   STORAGE_MONTHLY_COST,
+  estimateFargateMonthlyCost,
 } from "@heizen/shared/presets";
 
 export function CostEstimator({ config }: { config: HeizenConfig }) {
   let total = 0;
 
   for (const service of config.services) {
-    total += CPU_PRESETS[service.cpu].monthlyCost * service.scaling.min;
+    total += estimateFargateMonthlyCost(service.cpu, service.memory) * service.scaling.min;
   }
 
   if (config.database.engine === "postgres" && config.database.size) {

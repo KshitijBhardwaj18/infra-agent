@@ -15,7 +15,8 @@ export interface EnvDefaults {
     size: "micro" | "small" | "medium";
   };
   service: {
-    cpu: "small" | "medium" | "large";
+    cpu: number;
+    memory: number;
     scaling: { min: number; max: number; cpuTarget: number };
   };
 }
@@ -30,7 +31,8 @@ export const STAGING_DEFAULTS: EnvDefaults = {
   },
   cache: { size: "micro" },
   service: {
-    cpu: "small",
+    cpu: 256,
+    memory: 512,
     scaling: { min: 1, max: 2, cpuTarget: 70 },
   },
 };
@@ -45,7 +47,8 @@ export const PRODUCTION_DEFAULTS: EnvDefaults = {
   },
   cache: { size: "small" },
   service: {
-    cpu: "medium",
+    cpu: 512,
+    memory: 1024,
     scaling: { min: 2, max: 6, cpuTarget: 60 },
   },
 };
@@ -85,6 +88,7 @@ export function applyDefaults(cfg: HeizenConfig): HeizenConfig {
     services: cfg.services.map((s) => ({
       ...s,
       cpu: s.cpu ?? d.service.cpu,
+      memory: s.memory ?? d.service.memory,
       scaling: s.scaling ?? d.service.scaling,
     })),
   };
