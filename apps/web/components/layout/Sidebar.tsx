@@ -12,6 +12,7 @@ import {
   TestTube2,
   History,
   Settings,
+  KeyRound,
   ChevronDown,
   PanelLeftClose,
   PanelLeft,
@@ -180,6 +181,13 @@ export function Sidebar({ projectSlug, projectName }: SidebarProps) {
                 label="Deployments"
                 collapsed={collapsed}
                 active={pathname.startsWith(`/projects/${projectSlug}/deployments`)}
+              />
+              <NavItem
+                href={`/projects/${projectSlug}/secrets`}
+                icon={KeyRound}
+                label="Secrets"
+                collapsed={collapsed}
+                active={pathname.startsWith(`/projects/${projectSlug}/secrets`)}
               />
               <NavItem
                 href={`/projects/${projectSlug}/settings`}

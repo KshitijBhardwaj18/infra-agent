@@ -59,6 +59,16 @@ export class EnvVarsController {
     return this.envVars.delete(orgId, projectId, envId, varId);
   }
 
+  @Patch(":varId/dismiss")
+  dismiss(
+    @CurrentOrg() orgId: string,
+    @Param("projectId") projectId: string,
+    @Param("envId") envId: string,
+    @Param("varId") varId: string,
+  ) {
+    return this.envVars.dismiss(orgId, projectId, envId, varId);
+  }
+
   @Put("bulk")
   bulk(
     @CurrentOrg() orgId: string,

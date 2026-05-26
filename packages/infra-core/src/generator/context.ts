@@ -106,7 +106,7 @@ export function buildTemplateContext(
       envFromRedis: receivesInfraEnv && hasCache,
       envFromBucket: receivesInfraEnv && hasStorage,
       envFromRegion: receivesInfraEnv && hasStorage,
-      envFromNodeEnv: receivesInfraEnv,
+      envFromNodeEnv: true,
       pulumiAllSources,
       pulumiDestructure,
       targetGroupVar: s.port !== null ? `${camelize(s.name)}Tg` : null,
