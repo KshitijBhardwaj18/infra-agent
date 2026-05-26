@@ -93,7 +93,6 @@ export const albSg = new aws.ec2.SecurityGroup(`${prefix}-alb-sg`, {
   vpcId: vpc.id,
   ingress: [
     { protocol: "tcp", fromPort: 80,  toPort: 80,  cidrBlocks: ["0.0.0.0/0"], description: "HTTP" },
-    { protocol: "tcp", fromPort: 443, toPort: 443, cidrBlocks: ["0.0.0.0/0"], description: "HTTPS" },
   ],
   egress: [{ protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] }],
   tags: { Name: `${prefix}-alb-sg` },

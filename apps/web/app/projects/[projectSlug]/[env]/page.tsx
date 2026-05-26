@@ -257,7 +257,7 @@ function EnvironmentPageContent({
 
   if (environment.status === "LIVE" && environment.heizenConfig) {
     const outputs = environment.stackOutputs as Record<string, string> | null;
-    const appUrl = outputs?.albDnsName ? `https://${outputs.albDnsName}` : null;
+    const appUrl = outputs?.albDnsName ? `http://${outputs.albDnsName}` : null;
 
     return (
       <div className="mx-auto max-w-5xl space-y-6 p-6">
@@ -343,6 +343,10 @@ function EnvironmentPageContent({
                         </div>
                       </div>
                     </div>
+                    <p className="text-sm text-muted-foreground">
+                      Point your domain to this ALB address using a CNAME record.
+                      For HTTPS, place Cloudflare or another CDN in front of this URL.
+                    </p>
                   </div>
                 ) : (
                   <p className="mt-3 text-sm text-muted-foreground">

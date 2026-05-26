@@ -1,4 +1,4 @@
-{{#if hasAlb}}import { alb, cert } from "./components/loadbalancer"
+{{#if hasAlb}}import { alb } from "./components/loadbalancer"
 {{/if}}import {
 {{#if hasDatabase}}  db,
 {{/if}}{{#if hasCache}}  redis,
@@ -8,7 +8,6 @@ import { cluster{{#each services}}, {{camel name}}Service{{/each}} } from "./com
 import { vpc } from "./components/networking"
 
 {{#if hasAlb}}export const albDnsName    = alb.dnsName
-export const certArn        = cert.arn
 {{/if}}export const clusterName   = cluster.name
 export const vpcId          = vpc.id
 {{#each services}}export const {{camel name}}ServiceName = {{camel name}}Service.name
