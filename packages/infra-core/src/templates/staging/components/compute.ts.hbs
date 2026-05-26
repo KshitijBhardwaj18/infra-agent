@@ -94,7 +94,7 @@ const {{camel name}}Env = pulumi.all([
 {{#each pulumiAllSources}}  {{this}},
 {{/each}}]).apply(([{{join pulumiDestructure ", "}}]: any[]) => {
   const env: { name: string; value: string }[] = []
-  {{#if envFromNodeEnv}}env.push({ name: "NODE_ENV", value: "development" })
+  {{#if envFromNodeEnv}}env.push({ name: "NODE_ENV", value: "production" })
   {{/if}}{{#if envFromDb}}env.push({ name: "DATABASE_URL", value: `postgresql://{{../database.dbUser}}:${dbPass}@${dbEndpoint}:5432/{{../database.dbName}}` })
   {{/if}}{{#if envFromRedis}}env.push({ name: "REDIS_URL", value: `redis://${redisHost}:6379` })
   {{/if}}{{#if envFromBucket}}env.push({ name: "AWS_S3_BUCKET", value: bucketName })

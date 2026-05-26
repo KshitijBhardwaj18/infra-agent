@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   KeyRound, Eye, EyeOff, Plus, X, Check, Zap,
@@ -15,7 +15,6 @@ import type { HeizenConfig } from "@heizen/shared";
 
 function getAutoInjectedKeys(
   config: HeizenConfig | null,
-  envType: "PRODUCTION" | "STAGING",
 ): Array<{ key: string; description: string; active: boolean }> {
   const hasPostgres = config?.database.engine === "postgres";
   const hasRedis = config?.cache.engine === "redis";
@@ -46,10 +45,7 @@ function getAutoInjectedKeys(
     {
       key: "NODE_ENV",
       active: true,
-      description:
-        envType === "STAGING"
-          ? 'Always set to "development" in staging'
-          : 'Always set to "production" in production',
+      description: 'Always set to "production"',
     },
   ];
 }
@@ -72,15 +68,21 @@ interface Project {
 function SecretRow({
   secret,
   onSave,
-  onDelete,
   onDismiss,
   isSuggestion = false,
+  confirmingDelete = false,
+  onDeleteRequest,
+  onDeleteConfirm,
+  onDeleteCancel,
 }: {
   secret: EnvVar;
   onSave: (id: string, value: string) => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
   onDismiss?: (id: string) => Promise<void>;
   isSuggestion?: boolean;
+  confirmingDelete?: boolean;
+  onDeleteRequest?: (id: string) => void;
+  onDeleteConfirm?: (id: string) => Promise<void>;
+  onDeleteCancel?: () => void;
 }) {
   const [editing, setEditing] = useState(isSuggestion && !secret.hasValue);
   const [inputValue, setInputValue] = useState("");
@@ -159,16 +161,14 @@ function SecretRow({
             >
               {saving ? "Saving..." : "Save"}
             </Button>
-            {!isSuggestion && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => { setEditing(false); setInputValue(""); }}
-                className="h-8 text-xs"
-              >
-                Cancel
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => { setEditing(false); setInputValue(""); }}
+              className="h-8 text-xs"
+            >
+              Cancel
+            </Button>
           </div>
         ) : (
           <p className="mt-0.5 text-xs text-zinc-500">
@@ -199,16 +199,38 @@ function SecretRow({
             <X size={12} />
           </Button>
         )}
-        {!isSuggestion && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onDelete(secret.id)}
-            className="h-7 text-red-400/60 hover:text-red-400"
-            aria-label="Delete"
-          >
-            <X size={12} />
-          </Button>
+        {!isSuggestion && onDeleteRequest && onDeleteConfirm && onDeleteCancel && (
+          confirmingDelete ? (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-zinc-400">Delete?</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onDeleteConfirm(secret.id)}
+                className="h-7 text-xs text-red-400 hover:text-red-300"
+              >
+                Yes
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onDeleteCancel}
+                className="h-7 text-xs text-zinc-500"
+              >
+                No
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onDeleteRequest(secret.id)}
+              className="h-7 text-red-400/60 hover:text-red-400"
+              aria-label="Delete"
+            >
+              <X size={12} />
+            </Button>
+          )
         )}
       </div>
     </div>
@@ -221,10 +243,12 @@ function AddSecretForm({ onAdd }: { onAdd: (key: string, value: string) => Promi
   const [value, setValue] = useState("");
   const [show, setShow] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   const handleAdd = async () => {
     if (!key.trim() || !value.trim()) return;
     setSaving(true);
+    setAddError(null);
     try {
       await onAdd(
         key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_"),
@@ -233,6 +257,12 @@ function AddSecretForm({ onAdd }: { onAdd: (key: string, value: string) => Promi
       setKey("");
       setValue("");
       setOpen(false);
+    } catch (err) {
+      setAddError(
+        err instanceof Error && err.message.includes("already")
+          ? "A secret with this key already exists."
+          : "Failed to add secret. Try again.",
+      );
     } finally {
       setSaving(false);
     }
@@ -286,11 +316,14 @@ function AddSecretForm({ onAdd }: { onAdd: (key: string, value: string) => Promi
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => { setOpen(false); setKey(""); setValue(""); }}
+            onClick={() => { setOpen(false); setKey(""); setValue(""); setAddError(null); }}
           >
             Cancel
           </Button>
         </div>
+        {addError && (
+          <p className="text-xs text-red-400">{addError}</p>
+        )}
       </div>
     </div>
   );
@@ -302,37 +335,47 @@ function SecretsContent() {
   const [activeEnv, setActiveEnv] = useState<"PRODUCTION" | "STAGING">("PRODUCTION");
   const [vars, setVars] = useState<EnvVar[]>([]);
   const [loading, setLoading] = useState(true);
+  const [varsLoading, setVarsLoading] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const activeEnvironment = project?.environments.find((e) => e.type === activeEnv);
 
-  const loadVars = useCallback(async (projId: string, envId: string) => {
-    const data = await api<EnvVar[]>(
-      `/api/projects/${projId}/environments/${envId}/env-vars`,
-    );
-    setVars(data);
-  }, []);
-
   useEffect(() => {
-    api<Array<{ id: string; slug: string; environments: Array<{ id: string; type: string; heizenConfig: HeizenConfig | null }> }>>(
-      "/api/projects",
-    )
+    api<Array<{
+      id: string;
+      slug: string;
+      environments: Array<{ id: string; type: string; heizenConfig: HeizenConfig | null }>;
+    }>>("/api/projects")
       .then((projects) => {
         const p = projects.find((pr) => pr.slug === params.projectSlug);
-        if (p) {
-          setProject(p);
-          const prod = p.environments.find((e) => e.type === "PRODUCTION");
-          if (prod) loadVars(p.id, prod.id);
-        }
+        if (p) setProject(p);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [params.projectSlug, loadVars]);
+  }, [params.projectSlug]);
 
   useEffect(() => {
-    if (project && activeEnvironment) {
-      loadVars(project.id, activeEnvironment.id);
-    }
-  }, [activeEnv, project, activeEnvironment, loadVars]);
+    if (!project) return;
+    const env = project.environments.find((e) => e.type === activeEnv);
+    if (!env) return;
+    let cancelled = false;
+    setVarsLoading(true);
+    api<EnvVar[]>(
+      `/api/projects/${project.id}/environments/${env.id}/env-vars`,
+    )
+      .then((data) => { if (!cancelled) setVars(data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setVarsLoading(false); });
+    return () => { cancelled = true; };
+  }, [project, activeEnv]);
+
+  const reloadVars = async () => {
+    if (!project || !activeEnvironment) return;
+    const data = await api<EnvVar[]>(
+      `/api/projects/${project.id}/environments/${activeEnvironment.id}/env-vars`,
+    );
+    setVars(data);
+  };
 
   const handleSave = async (varId: string, value: string) => {
     if (!project || !activeEnvironment) return;
@@ -340,7 +383,7 @@ function SecretsContent() {
       `/api/projects/${project.id}/environments/${activeEnvironment.id}/env-vars/${varId}`,
       { method: "PATCH", body: JSON.stringify({ value }) },
     );
-    await loadVars(project.id, activeEnvironment.id);
+    await reloadVars();
   };
 
   const handleDelete = async (varId: string) => {
@@ -349,7 +392,8 @@ function SecretsContent() {
       `/api/projects/${project.id}/environments/${activeEnvironment.id}/env-vars/${varId}`,
       { method: "DELETE" },
     );
-    await loadVars(project.id, activeEnvironment.id);
+    setDeleteConfirm(null);
+    await reloadVars();
   };
 
   const handleDismiss = async (varId: string) => {
@@ -358,7 +402,7 @@ function SecretsContent() {
       `/api/projects/${project.id}/environments/${activeEnvironment.id}/env-vars/${varId}/dismiss`,
       { method: "PATCH" },
     );
-    await loadVars(project.id, activeEnvironment.id);
+    await reloadVars();
   };
 
   const handleAdd = async (key: string, value: string) => {
@@ -367,7 +411,7 @@ function SecretsContent() {
       `/api/projects/${project.id}/environments/${activeEnvironment.id}/env-vars`,
       { method: "POST", body: JSON.stringify({ service: "shared", key, value }) },
     );
-    await loadVars(project.id, activeEnvironment.id);
+    await reloadVars();
   };
 
   if (loading) {
@@ -381,10 +425,10 @@ function SecretsContent() {
   }
 
   const suggestions = vars.filter((v) => !v.isAutoGenerated && !v.dismissed && !v.hasValue);
-  const userSecrets  = vars.filter((v) => !v.isAutoGenerated && (v.hasValue || v.dismissed === false) && !((!v.dismissed) && (!v.hasValue)));
+  const userSecrets = vars.filter((v) => !v.isAutoGenerated && v.hasValue);
   const missingCount = suggestions.length;
   const heizenConfig = activeEnvironment?.heizenConfig ?? null;
-  const autoInjectedKeys = getAutoInjectedKeys(heizenConfig, activeEnv);
+  const autoInjectedKeys = getAutoInjectedKeys(heizenConfig);
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6">
@@ -395,21 +439,27 @@ function SecretsContent() {
           <KeyRound size={16} className="text-zinc-400" />
           <h1 className="text-base font-semibold">Secrets</h1>
         </div>
-        <div className="flex rounded-md border border-zinc-800 bg-zinc-900 p-0.5">
-          {(["PRODUCTION", "STAGING"] as const).map((env) => (
-            <button
-              key={env}
-              onClick={() => setActiveEnv(env)}
-              className={cn(
-                "rounded px-3 py-1 text-xs font-medium transition-colors",
-                activeEnv === env
-                  ? "bg-zinc-700 text-white"
-                  : "text-zinc-400 hover:text-zinc-200",
-              )}
-            >
-              {env.charAt(0) + env.slice(1).toLowerCase()}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          {varsLoading && (
+            <div className="h-3 w-3 animate-spin rounded-full border border-zinc-600 border-t-zinc-300" />
+          )}
+          <div className="flex rounded-md border border-zinc-800 bg-zinc-900 p-0.5">
+            {(["PRODUCTION", "STAGING"] as const).map((env) => (
+              <button
+                key={env}
+                onClick={() => !varsLoading && setActiveEnv(env)}
+                className={cn(
+                  "rounded px-3 py-1 text-xs font-medium transition-colors",
+                  activeEnv === env
+                    ? "bg-zinc-700 text-white"
+                    : "text-zinc-400 hover:text-zinc-200",
+                  varsLoading && "cursor-not-allowed opacity-50",
+                )}
+              >
+                {env.charAt(0) + env.slice(1).toLowerCase()}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -441,7 +491,6 @@ function SecretsContent() {
                 key={v.id}
                 secret={v}
                 onSave={handleSave}
-                onDelete={handleDelete}
                 onDismiss={handleDismiss}
                 isSuggestion
               />
@@ -500,7 +549,10 @@ function SecretsContent() {
                 key={v.id}
                 secret={v}
                 onSave={handleSave}
-                onDelete={handleDelete}
+                onDeleteRequest={(id) => setDeleteConfirm(id)}
+                onDeleteConfirm={handleDelete}
+                onDeleteCancel={() => setDeleteConfirm(null)}
+                confirmingDelete={deleteConfirm === v.id}
               />
             ))}
           </div>
