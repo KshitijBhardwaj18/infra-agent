@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/github/installed"];
 const ALWAYS_ALLOWED = ["/_next", "/favicon.ico"];
 
 export async function middleware(request: NextRequest) {
@@ -11,16 +11,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // GitHub post-install redirect: preserve installation_id/state query params.
-  // Auth is enforced by POST /api/github/install-complete, not middleware.
-  if (pathname.startsWith("/github/installed")) {
-    return NextResponse.next();
-  }
-
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-    const sessionCookie = request.cookies.get("better-auth.session_token");
-    if (sessionCookie) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+    if (pathname.startsWith("/login")) {
+      const sessionCookie = request.cookies.get("better-auth.session_token");
+      if (sessionCookie) {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
+      }
     }
     return NextResponse.next();
   }

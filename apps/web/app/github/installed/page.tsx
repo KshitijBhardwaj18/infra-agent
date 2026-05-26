@@ -41,13 +41,16 @@ function GitHubInstalledContent() {
 
     (async () => {
       try {
-        const result = await api<{ slug: string }>("/api/github/install-complete", {
-          method: "POST",
-          body: JSON.stringify({ installationId, projectId }),
-        });
+        const result = await api<{ slug: string; returnEnv?: string }>(
+          "/api/github/install-complete",
+          {
+            method: "POST",
+            body: JSON.stringify({ installationId, projectId, returnEnv }),
+          },
+        );
         clearCookie("heizen_pending_project");
         clearCookie("heizen_pending_env");
-        router.replace(`/projects/${result.slug}/${returnEnv}`);
+        router.replace(`/projects/${result.slug}/${result.returnEnv ?? "staging"}`);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to complete GitHub setup";

@@ -58,13 +58,13 @@ export class GithubController {
   @UseGuards(AuthGuard)
   async completeInstall(
     @CurrentUser() user: { id: string },
-    @Body() body: { installationId: string; projectId: string },
+    @Body() body: { installationId: string; projectId: string; returnEnv?: string },
   ) {
     if (!body?.installationId) {
-      throw new BadRequestException("installationId is required");
+      throw new BadRequestException("installationId required");
     }
     if (!body?.projectId) {
-      throw new BadRequestException("projectId is required");
+      throw new BadRequestException("projectId required");
     }
 
     this.logger.log(
@@ -75,7 +75,11 @@ export class GithubController {
       body.projectId,
       body.installationId,
     );
-    return { slug: project.slug, id: project.id };
+    return {
+      slug: project.slug,
+      id: project.id,
+      returnEnv: body.returnEnv ?? "staging",
+    };
   }
 
   @Get("github/callback")
