@@ -38,7 +38,7 @@ function parseImageUri(imageUri: string): { image: string; tag: string } {
   return { image: imageUri, tag: "latest" };
 }
 
-@Processor("deployment", { concurrency: 1 })
+@Processor("deployment", { concurrency: 1, stalledInterval: 30_000, maxStalledCount: 2 })
 export class DeploymentProcessor extends WorkerHost {
   private readonly logger = new Logger(DeploymentProcessor.name);
 
@@ -52,6 +52,18 @@ export class DeploymentProcessor extends WorkerHost {
   }
 
   async process(job: Job<DeploymentJob>): Promise<void> {
+    return Promise.race([
+      this.doProcess(job),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Deployment timed out after 30 minutes")),
+          30 * 60 * 1000,
+        ),
+      ),
+    ]);
+  }
+
+  private async doProcess(job: Job<DeploymentJob>): Promise<void> {
     const { deploymentId, environmentId, projectId } = job.data;
     const outputDir = path.join(os.tmpdir(), `infra-${deploymentId}`);
 
@@ -66,6 +78,11 @@ export class DeploymentProcessor extends WorkerHost {
 
       if (!deployment || !environment || !project) {
         throw new Error("Deployment, environment, or project not found");
+      }
+
+      if (deployment.status === "CANCELLED") {
+        this.logger.log(`Deployment ${deploymentId} was cancelled before processing started — skipping`);
+        return;
       }
 
       orgId = project.organizationId;

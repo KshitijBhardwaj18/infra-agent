@@ -20,15 +20,14 @@ export function IndexingResults({ config, missingEnvCount }: Props) {
           {config.services.map((s) => (
             <div
               key={s.name}
-              className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 p-4"
+              className="flex items-center justify-between rounded-lg border border-border bg-card p-4"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-zinc-800">
-                  <Server size={14} className="text-zinc-400" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
+                  <Server size={14} className="text-muted-foreground" />
                 </div>
                 <div>
                   <p className="text-sm font-medium">{s.name}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{s.type}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -61,7 +60,7 @@ export function IndexingResults({ config, missingEnvCount }: Props) {
       </div>
 
       {missingEnvCount > 0 && (
-        <p className="text-sm text-amber-500/90">
+        <p className="text-sm text-warning-foreground">
           {missingEnvCount} environment variable{missingEnvCount > 1 ? "s" : ""} need
           values before deploying.
         </p>

@@ -7,8 +7,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { HeizenConfig } from "@heizen/shared";
@@ -109,25 +111,25 @@ function SecretRow({
       className={cn(
         "flex items-center gap-3 rounded-lg border px-4 py-3",
         isSuggestion
-          ? "border-amber-500/20 bg-amber-500/5"
-          : "border-zinc-800 bg-zinc-900/50",
+          ? "border-warning/20 bg-warning/5"
+          : "border-border bg-card/50",
       )}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <code className="font-mono text-xs font-medium text-zinc-200">
+          <code className="font-mono text-xs font-medium text-foreground">
             {secret.key}
           </code>
           {isSuggestion && (
             <Badge
               variant="outline"
-              className="border-amber-500/30 text-[10px] text-amber-400"
+              className="border-warning/30 text-[10px] text-warning-foreground"
             >
               detected
             </Badge>
           )}
           {saved && (
-            <span className="flex items-center gap-1 text-[11px] text-green-400">
+            <span className="flex items-center gap-1 text-[11px] text-success">
               <Check size={11} /> saved
             </span>
           )}
@@ -148,7 +150,7 @@ function SecretRow({
               <button
                 type="button"
                 onClick={() => setShow((s) => !s)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
                 {show ? <EyeOff size={13} /> : <Eye size={13} />}
               </button>
@@ -171,7 +173,7 @@ function SecretRow({
             </Button>
           </div>
         ) : (
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <p className="mt-0.5 text-xs text-muted-foreground">
             {secret.hasValue ? "••••••••••••" : "No value set"}
           </p>
         )}
@@ -183,7 +185,7 @@ function SecretRow({
             size="sm"
             variant="ghost"
             onClick={() => setEditing(true)}
-            className="h-7 text-xs text-zinc-400 hover:text-white"
+            className="h-7 text-xs text-muted-foreground hover:text-foreground"
           >
             {secret.hasValue ? "Edit" : "Set"}
           </Button>
@@ -193,7 +195,7 @@ function SecretRow({
             size="sm"
             variant="ghost"
             onClick={() => onDismiss(secret.id)}
-            className="h-7 text-zinc-500 hover:text-zinc-300"
+            className="h-7 text-muted-foreground hover:text-foreground/90"
             aria-label="Dismiss"
           >
             <X size={12} />
@@ -202,12 +204,12 @@ function SecretRow({
         {!isSuggestion && onDeleteRequest && onDeleteConfirm && onDeleteCancel && (
           confirmingDelete ? (
             <div className="flex items-center gap-1">
-              <span className="text-xs text-zinc-400">Delete?</span>
+              <span className="text-xs text-muted-foreground">Delete?</span>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={() => onDeleteConfirm(secret.id)}
-                className="h-7 text-xs text-red-400 hover:text-red-300"
+                className="h-7 text-xs text-destructive hover:text-destructive/80"
               >
                 Yes
               </Button>
@@ -215,7 +217,7 @@ function SecretRow({
                 size="sm"
                 variant="ghost"
                 onClick={onDeleteCancel}
-                className="h-7 text-xs text-zinc-500"
+                className="h-7 text-xs text-muted-foreground"
               >
                 No
               </Button>
@@ -225,7 +227,7 @@ function SecretRow({
               size="sm"
               variant="ghost"
               onClick={() => onDeleteRequest(secret.id)}
-              className="h-7 text-red-400/60 hover:text-red-400"
+              className="h-7 text-destructive/60 hover:text-destructive"
               aria-label="Delete"
             >
               <X size={12} />
@@ -277,32 +279,43 @@ function AddSecretForm({ onAdd }: { onAdd: (key: string, value: string) => Promi
   }
 
   return (
-    <div className="rounded-lg border border-zinc-700 bg-zinc-900 p-4">
-      <p className="mb-3 text-xs font-medium text-zinc-400">New Secret</p>
+    <div className="rounded-lg border border-foreground/20 bg-card p-4">
+      <p className="mb-3 text-xs font-medium text-muted-foreground">New Secret</p>
       <div className="space-y-2">
-        <Input
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          placeholder="KEY_NAME"
-          className="font-mono text-xs"
-          autoFocus
-        />
-        <div className="relative">
+        <div className="space-y-1.5">
+          <Label htmlFor="secret-key">Key</Label>
           <Input
-            type={show ? "text" : "password"}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            placeholder="value"
-            className="pr-8 font-mono text-xs"
+            id="secret-key"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="DATABASE_URL"
+            className="font-mono text-xs"
+            autoFocus
           />
-          <button
-            type="button"
-            onClick={() => setShow((s) => !s)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
-          >
-            {show ? <EyeOff size={13} /> : <Eye size={13} />}
-          </button>
+          <p className="text-xs text-muted-foreground">
+            Uppercase letters, numbers, and underscores
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="secret-value">Value</Label>
+          <div className="relative">
+            <Input
+              id="secret-value"
+              type={show ? "text" : "password"}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              placeholder="Enter value..."
+              className="pr-8 font-mono text-xs"
+            />
+            <button
+              type="button"
+              onClick={() => setShow((s) => !s)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {show ? <EyeOff size={13} /> : <Eye size={13} />}
+            </button>
+          </div>
         </div>
         <div className="flex gap-2">
           <Button
@@ -322,7 +335,7 @@ function AddSecretForm({ onAdd }: { onAdd: (key: string, value: string) => Promi
           </Button>
         </div>
         {addError && (
-          <p className="text-xs text-red-400">{addError}</p>
+          <p className="text-xs text-destructive">{addError}</p>
         )}
       </div>
     </div>
@@ -441,14 +454,14 @@ function SecretsContent() {
       {/* Header + env switcher */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <KeyRound size={16} className="text-zinc-400" />
+          <KeyRound size={16} className="text-muted-foreground" />
           <h1 className="text-base font-semibold">Secrets</h1>
         </div>
         <div className="flex items-center gap-3">
           {varsLoading && (
-            <div className="h-3 w-3 animate-spin rounded-full border border-zinc-600 border-t-zinc-300" />
+            <div className="h-3 w-3 animate-spin rounded-full border border-border border-t-foreground/90" />
           )}
-          <div className="flex rounded-md border border-zinc-800 bg-zinc-900 p-0.5">
+          <div className="flex rounded-md border border-border bg-card p-0.5">
             {(["PRODUCTION", "STAGING"] as const).map((env) => (
               <button
                 key={env}
@@ -456,8 +469,8 @@ function SecretsContent() {
                 className={cn(
                   "rounded px-3 py-1 text-xs font-medium transition-colors",
                   activeEnv === env
-                    ? "bg-zinc-700 text-white"
-                    : "text-zinc-400 hover:text-zinc-200",
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
                   varsLoading && "cursor-not-allowed opacity-50",
                 )}
               >
@@ -469,12 +482,12 @@ function SecretsContent() {
       </div>
 
       {/* Info callout */}
-      <div className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-        <Zap size={14} className="mt-0.5 shrink-0 text-blue-400" />
-        <p className="text-xs leading-relaxed text-zinc-400">
+      <div className="flex items-start gap-3 rounded-lg border border-border bg-card/50 px-4 py-3">
+        <Zap size={14} className="mt-0.5 shrink-0 text-info" />
+        <p className="text-xs leading-relaxed text-muted-foreground">
           Secrets are encrypted and injected as environment variables into all
           ECS containers at deploy time. Your app reads them via{" "}
-          <code className="text-zinc-300">process.env.KEY_NAME</code>.
+          <code className="text-foreground/90">process.env.KEY_NAME</code>.
         </p>
       </div>
 
@@ -482,10 +495,10 @@ function SecretsContent() {
       {suggestions.length > 0 && (
         <section className="space-y-3">
           <div>
-            <p className="text-sm font-medium text-amber-400">
+            <p className="text-sm font-medium text-warning-foreground">
               💡 Detected in your codebase
             </p>
-            <p className="mt-0.5 text-xs text-zinc-500">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               These keys were found during analysis. Add values or dismiss
               the ones you don&apos;t need.
             </p>
@@ -506,11 +519,11 @@ function SecretsContent() {
 
       {/* Auto-injected */}
       <section className="space-y-3">
-        <p className="text-sm font-medium text-zinc-400">
+        <p className="text-sm font-medium text-muted-foreground">
           ⚡ Auto-injected by Heizen
         </p>
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-4 py-3">
-          <p className="mb-3 text-xs text-zinc-500">
+        <div className="rounded-lg border border-border bg-card/30 px-4 py-3">
+          <p className="mb-3 text-xs text-muted-foreground">
             {heizenConfig
               ? "Injected at deploy time based on your stack — only keys that apply to this environment are set."
               : "After indexing your codebase, Heizen injects variables that match your stack (Postgres, Redis, S3, etc.)."}
@@ -521,13 +534,13 @@ function SecretsContent() {
                 key={item.key}
                 className={cn(
                   "flex items-start justify-between gap-4 rounded-md px-2 py-1.5",
-                  item.active ? "bg-zinc-900/40" : "opacity-60",
+                  item.active ? "bg-card/40" : "opacity-60",
                 )}
               >
-                <code className="shrink-0 font-mono text-xs font-medium text-zinc-200">
+                <code className="shrink-0 font-mono text-xs font-medium text-foreground">
                   {item.key}
                 </code>
-                <span className="text-right text-xs text-zinc-500">{item.description}</span>
+                <span className="text-right text-xs text-muted-foreground">{item.description}</span>
               </div>
             ))}
           </div>
@@ -537,16 +550,16 @@ function SecretsContent() {
       {/* User secrets */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-zinc-300">Your Secrets</p>
+          <p className="text-sm font-medium text-foreground/90">Your Secrets</p>
           <AddSecretForm onAdd={handleAdd} />
         </div>
         {userSecrets.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-zinc-800 py-8 text-center">
-            <p className="text-sm text-zinc-500">No secrets added yet.</p>
-            <p className="mt-1 text-xs text-zinc-600">
-              Add any key-value pair your app needs at runtime.
-            </p>
-          </div>
+          <EmptyState
+            icon={KeyRound}
+            title="No secrets added yet"
+            description="Add any key-value pair your app needs at runtime."
+            className="py-8"
+          />
         ) : (
           <div className="space-y-2">
             {userSecrets.map((v) => (
@@ -566,11 +579,11 @@ function SecretsContent() {
 
       {/* Missing secrets warning */}
       {missingCount > 0 && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-          <p className="text-sm font-medium text-amber-400">
+        <div className="rounded-lg border border-warning/20 bg-warning/5 px-4 py-3">
+          <p className="text-sm font-medium text-warning-foreground">
             ⚠ {missingCount} detected secret{missingCount !== 1 ? "s" : ""} have no value
           </p>
-          <p className="mt-1 text-xs text-zinc-400">
+          <p className="mt-1 text-xs text-muted-foreground">
             These will be empty strings in your containers at deploy time.
             Fill them in above or dismiss them if not needed.
           </p>

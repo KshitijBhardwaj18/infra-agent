@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/github/installed"];
+const PUBLIC_PATHS = ["/login"];
 const ALWAYS_ALLOWED = ["/_next", "/favicon.ico"];
 
 export async function middleware(request: NextRequest) {
@@ -13,7 +13,9 @@ export async function middleware(request: NextRequest) {
 
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     if (pathname.startsWith("/login")) {
-      const sessionCookie = request.cookies.get("better-auth.session_token");
+      const sessionCookie =
+        request.cookies.get("__Secure-better-auth.session_token") ??
+        request.cookies.get("better-auth.session_token");
       if (sessionCookie) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
@@ -21,7 +23,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const sessionCookie = request.cookies.get("better-auth.session_token");
+  const sessionCookie =
+    request.cookies.get("__Secure-better-auth.session_token") ??
+    request.cookies.get("better-auth.session_token");
 
   if (!sessionCookie?.value) {
     const loginUrl = new URL("/login", request.url);
@@ -33,7 +37,7 @@ export async function middleware(request: NextRequest) {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
     const res = await fetch(`${apiUrl}/api/auth/get-session`, {
       headers: {
-        cookie: `better-auth.session_token=${sessionCookie.value}`,
+        cookie: `${sessionCookie.name}=${sessionCookie.value}`,
       },
       cache: "no-store",
     });

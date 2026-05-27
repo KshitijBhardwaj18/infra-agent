@@ -22,7 +22,7 @@ export function AppShell({
   githubBranch,
 }: AppShellProps) {
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="min-h-screen bg-background text-foreground flex overflow-hidden h-screen">
       <Sidebar projectSlug={projectSlug} projectName={projectName} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header
@@ -30,7 +30,7 @@ export function AppShell({
           projectName={projectName}
           githubBranch={githubBranch}
         />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-x-hidden overflow-y-auto">{children}</main>
       </div>
       {showAgent && projectId ? <AgentPanel projectId={projectId} /> : null}
     </div>

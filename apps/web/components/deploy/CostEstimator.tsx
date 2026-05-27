@@ -10,6 +10,18 @@ import {
   estimateFargateMonthlyCost,
 } from "@heizen/shared/presets";
 
+const fmtCost = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function formatCost(value: number): string {
+  if (!Number.isFinite(value)) return "$0.00";
+  return fmtCost.format(value);
+}
+
 export function CostEstimator({ config }: { config: HeizenConfig }) {
   let total = 0;
 
@@ -31,10 +43,10 @@ export function CostEstimator({ config }: { config: HeizenConfig }) {
   if (config.storage.enabled) total += STORAGE_MONTHLY_COST;
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+    <div className="rounded-lg border border-border bg-background p-4">
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">Estimated monthly cost</span>
-        <span className="text-lg font-semibold">${total}/mo</span>
+        <span className="tabular-nums text-lg font-semibold">{formatCost(total)}/mo</span>
       </div>
     </div>
   );

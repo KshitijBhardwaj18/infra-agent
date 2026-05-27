@@ -152,9 +152,8 @@ export default function ProjectSettingsPage({
 
   const connectGithub = () => {
     if (!project) return;
-    document.cookie = `heizen_pending_project=${project.id}; path=/; max-age=600; SameSite=Lax`;
-    document.cookie = `heizen_pending_env=staging; path=/; max-age=600; SameSite=Lax`;
-    window.location.href = `${apiUrl("/api/github/install")}?projectId=${project.id}`;
+    // No cookies — signed state is passed as a server-side token via the install URL.
+    window.location.href = `${apiUrl("/api/github/install")}?projectId=${project.id}&return_env=staging`;
   };
 
   if (loading) {
@@ -188,7 +187,7 @@ export default function ProjectSettingsPage({
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="rounded-lg border border-border bg-card p-5 max-w-lg">
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="project-name">Project name</Label>
@@ -202,16 +201,16 @@ export default function ProjectSettingsPage({
               <Button size="sm" onClick={saveGeneral} disabled={saving}>
                 Save changes
               </Button>
-              {saveError && <p className="text-sm text-red-400">{saveError}</p>}
+              {saveError && <p className="text-sm text-destructive">{saveError}</p>}
             </div>
           </div>
         </TabsContent>
 
         <TabsContent value="github" className="space-y-4">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="rounded-lg border border-border bg-card p-5 max-w-lg">
             {connected ? (
               <div className="space-y-4">
-                <p className="text-sm text-zinc-300">
+                <p className="text-sm text-foreground/90">
                   Connected to{" "}
                   <span className="font-mono text-xs">
                     {project.githubOwner}/{project.githubRepo}
@@ -243,7 +242,7 @@ export default function ProjectSettingsPage({
         </TabsContent>
 
         <TabsContent value="aws" className="space-y-4">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="rounded-lg border border-border bg-card p-5 max-w-lg">
             <p className="mb-4 text-xs text-muted-foreground">
               Production environment AWS credentials
             </p>
@@ -265,7 +264,7 @@ export default function ProjectSettingsPage({
                       aria-label="Copy environment ID"
                     >
                       {copiedEnvId ? (
-                        <Check size={14} className="text-green-500" />
+                        <Check size={14} className="text-success" />
                       ) : (
                         <Copy size={14} />
                       )}
@@ -293,15 +292,15 @@ export default function ProjectSettingsPage({
                   Verify connection
                 </Button>
               </div>
-              {verifyResult && <p className="text-sm text-green-400">{verifyResult}</p>}
-              {saveError && <p className="text-sm text-red-400">{saveError}</p>}
+              {verifyResult && <p className="text-sm text-success">{verifyResult}</p>}
+              {saveError && <p className="text-sm text-destructive">{saveError}</p>}
             </div>
           </div>
         </TabsContent>
 
         <TabsContent value="danger">
-          <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-5">
-            <h3 className="text-sm font-medium text-red-400">Delete project</h3>
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-5">
+            <h3 className="text-sm font-medium text-destructive">Delete project</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               Permanently delete this project and all associated environments. This cannot be
               undone.

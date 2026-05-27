@@ -38,26 +38,26 @@ function LoginContent() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <div className="hidden min-h-screen flex-1 flex-col justify-between border-r border-zinc-800 bg-zinc-900 p-10 md:flex">
+      <div className="hidden min-h-screen flex-1 flex-col justify-between border-r border-border bg-card p-10 md:flex">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-zinc-800">
-            <span className="text-sm font-semibold text-white">H</span>
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
+            <span className="text-sm font-semibold text-foreground">H</span>
           </div>
-          <span className="text-xl font-semibold text-white">Heizen</span>
+          <span className="text-xl font-semibold text-foreground">Heizen</span>
         </div>
         <div className="max-w-md">
-          <h1 className="text-4xl font-bold leading-tight text-white">
+          <h1 className="text-4xl font-bold leading-tight text-foreground">
             Ship infrastructure,{" "}
-            <span className="text-zinc-500">not YAML.</span>
+            <span className="text-muted-foreground">not YAML.</span>
           </h1>
-          <p className="mt-4 text-lg text-zinc-400">
+          <p className="mt-4 text-lg text-muted-foreground">
             Connect your repo. We figure out the rest.
           </p>
         </div>
         <ul className="space-y-3">
           {features.map((f) => (
-            <li key={f} className="flex items-center gap-2 text-sm text-zinc-400">
-              <Check size={14} className="shrink-0 text-green-500" />
+            <li key={f} className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Check size={14} className="shrink-0 text-success" />
               {f}
             </li>
           ))}
@@ -67,7 +67,7 @@ function LoginContent() {
       <div className="flex flex-1 items-center justify-center p-6">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex items-center gap-2 md:hidden">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-zinc-800">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
               <span className="text-sm font-semibold">H</span>
             </div>
             <span className="text-lg font-semibold">Heizen</span>
@@ -78,18 +78,18 @@ function LoginContent() {
             Sign in to your workspace
           </p>
 
-          <div className="mt-8 space-y-3 rounded-lg border border-zinc-800 bg-zinc-900 p-6">
+          <div className="mt-8 space-y-3 rounded-lg border border-border bg-card p-6">
             <Button
               variant="outline"
               onClick={handleSignIn}
               disabled={loading}
-              className="h-10 w-full gap-2 border-zinc-700 bg-zinc-800 text-sm font-medium hover:bg-zinc-700 hover:text-white"
+              className="h-10 w-full gap-2 border-foreground/20 bg-muted text-sm font-medium hover:bg-muted hover:text-foreground"
             >
               <GitHubIcon size={15} />
               {loading ? "Redirecting…" : "Continue with GitHub"}
             </Button>
             {error && (
-              <p className="text-center text-xs text-red-400">{error}</p>
+              <p className="text-center text-xs text-destructive">{error}</p>
             )}
             <p className="text-center text-xs text-muted-foreground">
               By continuing you agree to our Terms of Service

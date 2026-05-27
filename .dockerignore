@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+.git
+.turbo
+**/.turbo
+**/.next
+**/dist
+**/tsconfig.tsbuildinfo
+dumps
+*.log
+.env
+.env.*
+!.env.example
+apps/api/.env
+apps/web/.env

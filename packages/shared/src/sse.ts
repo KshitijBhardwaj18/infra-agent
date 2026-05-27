@@ -54,6 +54,11 @@ export interface IndexingCompletePayload {
   error?: string;
 }
 
+export interface GithubDisconnectedPayload {
+  projectIds: string[];
+  reason: "uninstalled" | "suspended" | "repo_removed";
+}
+
 export interface AgentChatSsePayload {
   text?: string;
   type?: "done";
@@ -63,4 +68,5 @@ export interface AgentChatSsePayload {
 export type WebSocketEvent =
   | { event: "deployment:status"; data: DeploymentStatusPayload }
   | { event: "environment:status"; data: EnvironmentStatusPayload }
-  | { event: "indexing:complete"; data: IndexingCompletePayload };
+  | { event: "indexing:complete"; data: IndexingCompletePayload }
+  | { event: "github:disconnected"; data: GithubDisconnectedPayload };

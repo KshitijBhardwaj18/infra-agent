@@ -32,12 +32,31 @@ export function buildTemplateContext(
     allConfigVars.set(envVarToCamel(key), key);
   }
 
+  // ── Pre-pass: find default ALB service name ───────────────────────
+  // Must be computed before services.map() so targetGroupVar can use it.
+  const defaultAlbServiceName = (() => {
+    const candidates = cfg.services.filter(
+      (s) => s.type !== "worker" && s.port != null,
+    );
+    return (
+      candidates.find((s) => s.type === "frontend")?.name ??
+      candidates.find((s) => s.type === "backend")?.name ??
+      candidates[0]?.name
+    );
+  })();
+
+  // ── Service contexts ──────────────────────────────────────────────
   const services: ServiceCtx[] = cfg.services.map((s) => {
     const isBackend = s.type === "backend";
     const isFrontend = s.type === "frontend";
     const isWorker = s.type === "worker";
     const receivesInfraEnv = isBackend || isWorker;
-    const hasDomain = !!s.domain;
+    const hasDomain = s.type !== "worker" && !!s.domain;
+
+    const isInAlb =
+      s.port != null &&
+      !isWorker &&
+      (s.name === defaultAlbServiceName || hasDomain);
 
     const serviceVarKeys = new Set<string>();
     const serviceConfigVars: ConfigVar[] = [];
@@ -65,7 +84,7 @@ export function buildTemplateContext(
 
     if (receivesInfraEnv) {
       if (hasDatabase) {
-        pulumiAllSources.push("db.endpoint", "dbPassword");
+        pulumiAllSources.push("db.endpoint", "cfg.dbPassword");
         pulumiDestructure.push("dbEndpoint", "dbPass");
       }
       if (hasCache) {
@@ -85,10 +104,12 @@ export function buildTemplateContext(
       pulumiDestructure.push(`${cv.configVar}Val`);
     }
 
+    const port = s.port ?? null;
+
     return {
       name: s.name,
       type: s.type,
-      port: s.port ?? null,
+      port,
       domain: s.domain ?? null,
       command: parseCommand(s.command),
       cpuValue: String(s.cpu),
@@ -108,13 +129,17 @@ export function buildTemplateContext(
       envFromNodeEnv: true,
       pulumiAllSources,
       pulumiDestructure,
-      targetGroupVar: s.port !== null ? `${camelize(s.name)}Tg` : null,
+      targetGroupVar: isInAlb ? `${camelize(s.name)}Tg` : null,
+      tgName: `${prefix}-${s.name}-tg`.slice(0, 32),
       healthCheck: s.healthCheck,
     };
   });
 
-  const servicesWithDomain = services.filter((s) => s.hasDomain);
-  const servicesWithPort = services.filter((s) => s.port !== null);
+  const servicesWithAlb = services.filter((s) => s.targetGroupVar !== null);
+  const servicesWithDomain = servicesWithAlb.filter((s) => s.hasDomain);
+  const servicesWithPort = services.filter(
+    (s) => s.port !== null && !s.isWorker,
+  );
   const hasAlb = cfg.loadBalancer.enabled;
 
   const ports = services
@@ -134,9 +159,9 @@ export function buildTemplateContext(
   }
 
   const defaultService =
-    servicesWithPort.find((s) => s.isFrontend) ??
-    servicesWithPort.find((s) => s.isBackend) ??
-    servicesWithPort[0];
+    servicesWithAlb.find((s) => s.isFrontend) ??
+    servicesWithAlb.find((s) => s.isBackend) ??
+    servicesWithAlb[0];
   const defaultTargetGroupVar = defaultService
     ? `${camelize(defaultService.name)}Tg`
     : "";
@@ -185,6 +210,7 @@ export function buildTemplateContext(
     services,
     servicesWithDomain,
     servicesWithPort,
+    servicesWithAlb,
     defaultTargetGroupVar,
     configExports,
     logRetentionDays: cfg.env === "production" ? 90 : 7,

@@ -6,6 +6,7 @@ import type {
   DeploymentStatusPayload,
   EnvironmentStatusPayload,
   IndexingCompletePayload,
+  GithubDisconnectedPayload,
 } from "@heizen/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -82,6 +83,23 @@ export function useIndexingComplete(
     s.on("indexing:complete", handler);
     return () => {
       s.off("indexing:complete", handler);
+    };
+  }, []);
+}
+
+export function useGithubDisconnected(
+  onDisconnected: (payload: GithubDisconnectedPayload) => void,
+) {
+  const callbackRef = useRef(onDisconnected);
+  callbackRef.current = onDisconnected;
+
+  useEffect(() => {
+    const s = getSocket();
+    const handler = (payload: GithubDisconnectedPayload) =>
+      callbackRef.current(payload);
+    s.on("github:disconnected", handler);
+    return () => {
+      s.off("github:disconnected", handler);
     };
   }, []);
 }

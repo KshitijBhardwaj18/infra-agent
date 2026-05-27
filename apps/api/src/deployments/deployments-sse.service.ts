@@ -38,6 +38,13 @@ export class DeploymentsSseService implements OnModuleDestroy {
     return this.getSubject(deploymentId).asObservable();
   }
 
+  /**
+   * Complete and remove the subject for a deploymentId once the deployment
+   * finishes (success, failure, or timeout). Called by the deployment
+   * worker's finally block so subjects don't accumulate indefinitely.
+   * NestJS @Sse unsubscribes when the client disconnects, but the Subject
+   * itself would linger until this is called.
+   */
   cleanup(deploymentId: string): void {
     const subject = this.subjects.get(deploymentId);
     if (subject) {

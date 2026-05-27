@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 interface HeaderProps {
   projectSlug?: string;
@@ -21,10 +22,10 @@ function Crumb({
   current?: boolean;
 }) {
   if (current || !href) {
-    return <span className="text-xs text-zinc-300">{label}</span>;
+    return <span className="text-xs text-foreground/90">{label}</span>;
   }
   return (
-    <Link href={href} className="text-xs text-zinc-500 transition-colors hover:text-zinc-300">
+    <Link href={href} className="text-xs text-muted-foreground transition-colors hover:text-foreground/90">
       {label}
     </Link>
   );
@@ -66,26 +67,29 @@ export function Header({ projectSlug, projectName, githubBranch }: HeaderProps) 
   }
 
   return (
-    <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-zinc-800/50 bg-background px-6">
-      <nav className="flex items-center">
-        {crumbs.map((crumb, index) => (
-          <span key={`${crumb.label}-${index}`} className="flex items-center">
-            {index > 0 && <span className="mx-1.5 text-zinc-700">/</span>}
-            <Crumb href={crumb.href} label={crumb.label} current={crumb.current} />
-          </span>
-        ))}
-      </nav>
+    <header className="sticky top-0 z-40 h-14 border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 shrink-0">
+      <div className="flex h-full items-center justify-between px-6">
+        <nav className="flex items-center">
+          {crumbs.map((crumb, index) => (
+            <span key={`${crumb.label}-${index}`} className="flex items-center">
+              {index > 0 && <span className="mx-1.5 text-foreground/20">/</span>}
+              <Crumb href={crumb.href} label={crumb.label} current={crumb.current} />
+            </span>
+          ))}
+        </nav>
 
-      <div className="flex items-center gap-2">
-        {projectSlug && githubBranch && (
-          <span className="flex items-center gap-1.5 rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-400">
-            <GitBranch size={12} />
-            {githubBranch}
-          </span>
-        )}
-        <Button variant="ghost" size="icon-sm" className="text-zinc-500 hover:text-zinc-300">
-          <Bell size={15} />
-        </Button>
+        <div className="flex items-center gap-1.5">
+          {projectSlug && githubBranch && (
+            <span className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground">
+              <GitBranch size={12} />
+              {githubBranch}
+            </span>
+          )}
+          <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground">
+            <Bell size={15} />
+          </Button>
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

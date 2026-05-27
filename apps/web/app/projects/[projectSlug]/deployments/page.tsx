@@ -7,6 +7,7 @@ import { ArrowRight, History } from "lucide-react";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusDot } from "@/components/ui/status-badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 
 interface Deployment {
@@ -130,8 +131,8 @@ export default function DeploymentsListPage({
             className={cn(
               "rounded-md border px-2.5 py-1 text-xs capitalize transition-colors",
               filter === f
-                ? "border-zinc-600 bg-zinc-800 text-white"
-                : "border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300",
+                ? "border-foreground/20 bg-muted text-foreground"
+                : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground/90",
             )}
           >
             {f}
@@ -148,20 +149,18 @@ export default function DeploymentsListPage({
       )}
 
       {!loading && filtered.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 py-16 text-center">
-          <div className="mb-3 rounded-full bg-zinc-900 p-3">
-            <History size={20} className="text-zinc-600" />
-          </div>
-          <p className="text-sm font-medium text-zinc-400">No deployments</p>
-          <p className="mt-1 text-xs text-zinc-600">Deploy an environment to see runs here</p>
-        </div>
+        <EmptyState
+          icon={History}
+          title="No deployments"
+          description="Deploy an environment to see runs here"
+        />
       )}
 
       {!loading && filtered.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-zinc-800">
+        <div className="overflow-hidden rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-800 bg-zinc-900/50 text-left text-xs text-zinc-500">
+              <tr className="border-b border-border bg-card/50 text-left text-xs text-muted-foreground">
                 <th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 font-medium">Environment</th>
                 <th className="px-4 py-2 font-medium">Trigger</th>
@@ -180,21 +179,21 @@ export default function DeploymentsListPage({
                       `/projects/${projectSlug}/${d.envSlug}/deployments/${d.id}`,
                     )
                   }
-                  className="cursor-pointer border-b border-zinc-800/50 transition-colors last:border-0 hover:bg-zinc-900/50"
+                  className="cursor-pointer border-b border-border/50 transition-colors last:border-0 hover:bg-card/50"
                 >
                   <td className="px-4 py-3">
                     <StatusDot status={d.status} />
                   </td>
-                  <td className="px-4 py-3 capitalize text-zinc-300">{d.envSlug}</td>
-                  <td className="px-4 py-3 text-zinc-400">manual</td>
-                  <td className="px-4 py-3 font-mono text-xs text-zinc-400">
+                  <td className="px-4 py-3 capitalize text-foreground/90">{d.envSlug}</td>
+                  <td className="px-4 py-3 text-muted-foreground">manual</td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                     {d.commitSha?.slice(0, 7) ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-zinc-400">
+                  <td className="tabular-nums px-4 py-3 text-muted-foreground">
                     {formatDuration(d.startedAt ?? d.createdAt, d.completedAt)}
                   </td>
-                  <td className="px-4 py-3 text-zinc-400">{timeAgo(d.createdAt)}</td>
-                  <td className="px-4 py-3 text-zinc-500">
+                  <td className="tabular-nums px-4 py-3 text-muted-foreground">{timeAgo(d.createdAt)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
                     <ArrowRight size={14} />
                   </td>
                 </tr>

@@ -53,7 +53,7 @@ export default function NewProjectPage() {
 
       <form
         onSubmit={submit}
-        className="max-w-lg rounded-lg border border-zinc-800 bg-card p-5"
+        className="max-w-lg rounded-lg border border-border bg-card p-5"
       >
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -83,7 +83,7 @@ export default function NewProjectPage() {
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Creating..." : "Create project"}
           </Button>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
       </form>
     </div>

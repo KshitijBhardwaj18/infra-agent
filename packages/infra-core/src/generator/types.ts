@@ -27,6 +27,7 @@ export interface ServiceCtx {
   pulumiAllSources: string[];
   pulumiDestructure: string[];
   targetGroupVar: string | null;
+  tgName: string;
   healthCheck?: { path: string; codes: string };
 }
 
@@ -70,6 +71,7 @@ export interface TemplateContext {
   services: ServiceCtx[];
   servicesWithDomain: ServiceCtx[];
   servicesWithPort: ServiceCtx[];
+  servicesWithAlb: ServiceCtx[];
   defaultTargetGroupVar: string;
   configExports: ConfigVar[];
   logRetentionDays: number;

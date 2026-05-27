@@ -60,7 +60,7 @@ export function DeploymentLogs({
         <span
           className={cn(
             "h-2 w-2 rounded-full",
-            connected ? "bg-green-500" : "bg-red-500",
+            connected ? "bg-success" : "bg-destructive",
           )}
         />
         <span className="text-sm text-muted-foreground">
@@ -68,7 +68,7 @@ export function DeploymentLogs({
         </span>
       </div>
 
-      <div className="flex gap-1 border-b border-zinc-800">
+      <div className="flex gap-1 border-b border-border">
         {PHASES.map((phase) => (
           <button
             key={phase}
@@ -77,8 +77,8 @@ export function DeploymentLogs({
             className={cn(
               "px-4 py-2 text-sm transition-colors",
               activePhase === phase
-                ? "border-b-2 border-white text-white"
-                : "text-muted-foreground hover:text-white",
+                ? "border-b-2 border-foreground text-foreground"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             {phase.replace("_", " ")}
@@ -86,14 +86,14 @@ export function DeploymentLogs({
         ))}
       </div>
 
-      <div className="h-96 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950 p-4 font-mono text-xs">
+      <div className="h-96 overflow-y-auto rounded-lg border border-border bg-background p-4 font-mono text-xs">
         {filtered.map((log, i) => (
           <div
             key={i}
             className={cn(
               "py-0.5",
-              log.level === "error" && "text-red-400",
-              log.level === "info" && "text-zinc-300",
+              log.level === "error" && "text-destructive",
+              log.level === "info" && "text-foreground/90",
             )}
           >
             {log.message}

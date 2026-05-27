@@ -3,118 +3,143 @@ import {
   Body,
   Controller,
   Get,
-  HttpException,
+  Inject,
   Logger,
   Param,
   Post,
   Query,
+  Req,
   Res,
+  ServiceUnavailableException,
   Sse,
   UseGuards,
 } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { map, type Observable } from "rxjs";
+import type { PrismaClient } from "@heizen/db";
+import { PRISMA } from "../prisma/prisma.module";
 import { AuthGuard } from "../common/guards/auth.guard";
 import { OrgGuard } from "../common/guards/org.guard";
 import { CurrentOrg } from "../common/decorators/current-org";
 import { CurrentUser } from "../common/decorators/current-user";
-import { GithubService } from "./github.service";
+import { auth } from "../auth/auth.config";
+import { GithubService, assertReturnEnv } from "./github.service";
 import { IndexingSseService } from "./indexing-sse.service";
+import { verifyState } from "./state";
+import { getErrorMessage } from "../common/errors";
 import type { IndexingSsePayload } from "@heizen/shared";
-
-function getErrorMessage(err: unknown): string {
-  if (err instanceof HttpException) {
-    const response = err.getResponse();
-    if (typeof response === "string") return response;
-    if (typeof response === "object" && response && "message" in response) {
-      const msg = (response as { message: string | string[] }).message;
-      return Array.isArray(msg) ? msg.join(", ") : msg;
-    }
-  }
-  if (err instanceof Error) return err.message;
-  return "unknown";
-}
 
 @Controller("api")
 export class GithubController {
   private readonly logger = new Logger(GithubController.name);
 
   constructor(
+    @Inject(PRISMA) private readonly prisma: PrismaClient,
     private readonly github: GithubService,
     private readonly indexingSse: IndexingSseService,
   ) {}
 
+  /**
+   * Initiates GitHub App installation.
+   * Validates org membership before redirecting so no orphaned installs happen
+   * from users who don't own the project.
+   */
   @Get("github/install")
   @UseGuards(AuthGuard)
-  install(
+  async install(
     @Res() res: Response,
     @Query("projectId") projectId: string,
     @Query("return_env") returnEnv: string,
-  ) {
-    return res.redirect(this.github.getInstallUrl(projectId ?? "", returnEnv ?? "staging"));
-  }
-
-  @Post("github/install-complete")
-  @UseGuards(AuthGuard)
-  async completeInstall(
     @CurrentUser() user: { id: string },
-    @Body() body: { installationId: string; projectId: string; returnEnv?: string },
   ) {
-    if (!body?.installationId) {
-      throw new BadRequestException("installationId required");
-    }
-    if (!body?.projectId) {
-      throw new BadRequestException("projectId required");
+    const origin = process.env.CORS_ORIGIN ?? "http://localhost:3000";
+
+    if (!projectId) {
+      return res.redirect(`${origin}/dashboard?error=github_missing_project`);
     }
 
-    this.logger.log(
-      `GitHub install: project=${body.projectId} user=${user.id} installation=${body.installationId}`,
-    );
-    const project = await this.github.handleCallback(
-      user.id,
-      body.projectId,
-      body.installationId,
-    );
-    return {
-      slug: project.slug,
-      id: project.id,
-      returnEnv: body.returnEnv ?? "staging",
-    };
+    // Authz check: ensure the calling user is a member of the project's org
+    // before we redirect to GitHub (prevents orphaned installs on foreign orgs).
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { organizationId: true },
+    });
+    if (!project) {
+      return res.redirect(`${origin}/dashboard?error=github_project_not_found`);
+    }
+
+    const member = await this.prisma.member.findFirst({
+      where: { userId: user.id, organizationId: project.organizationId },
+    });
+    if (!member) {
+      return res.redirect(`${origin}/dashboard?error=github_forbidden`);
+    }
+
+    const env = assertReturnEnv(returnEnv);
+    const url = this.github.getInstallUrl({ projectId, returnEnv: env, userId: user.id });
+    return res.redirect(url);
   }
 
+  /**
+   * Canonical GitHub OAuth callback — GitHub redirects here after install.
+   * Verifies the signed state, completes the installation, and redirects to
+   * the project page. This is the only post-install path; no cookies needed.
+   *
+   * No AuthGuard here — we do a manual session check so we can redirect to
+   * /login instead of returning a 401 JSON response in the browser.
+   */
   @Get("github/callback")
-  @UseGuards(AuthGuard)
   async callback(
     @Query("installation_id") installationId: string,
     @Query("state") stateParam: string,
-    @CurrentUser() user: { id: string },
+    @Req() req: Request,
     @Res() res: Response,
   ) {
     const origin = process.env.CORS_ORIGIN ?? "http://localhost:3000";
+
+    // Manual session check so we can redirect to /login instead of 401-ing.
+    const session = await auth.api.getSession({ headers: req.headers as Record<string, string> });
+    if (!session?.user) {
+      const callbackUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+      const next = encodeURIComponent(callbackUrl);
+      return res.redirect(`${origin}/login?next=${next}`);
+    }
+    const user = session.user;
 
     if (!installationId) {
       return res.redirect(`${origin}/dashboard?error=github_install_missing`);
     }
 
-    let projectId: string;
-    let returnEnv = "staging";
-    try {
-      const decoded = JSON.parse(Buffer.from(stateParam, "base64").toString()) as {
-        projectId: string;
-        returnEnv?: string;
-      };
-      projectId = decoded.projectId;
-      returnEnv = decoded.returnEnv ?? "staging";
-    } catch {
-      return res.redirect(`${origin}/dashboard?error=github_state_invalid`);
+    if (!stateParam) {
+      return res.redirect(`${origin}/dashboard?error=github_state_missing`);
     }
+
+    let payload: ReturnType<typeof verifyState>;
+    try {
+      payload = verifyState(stateParam);
+    } catch (err) {
+      const message = getErrorMessage(err);
+      this.logger.warn(`GitHub callback: invalid state — ${message}`);
+      const encoded = encodeURIComponent(message);
+      return res.redirect(`${origin}/dashboard?error=github_state_invalid&reason=${encoded}`);
+    }
+
+    // Ensure the user completing the install is the same one who started it.
+    if (payload.userId !== user.id) {
+      return res.redirect(`${origin}/dashboard?error=github_user_mismatch`);
+    }
+
+    const { projectId, returnEnv } = payload;
 
     try {
       const project = await this.github.handleCallback(user.id, projectId, installationId);
       return res.redirect(`${origin}/projects/${project.slug}/${returnEnv}`);
     } catch (err) {
       const message = getErrorMessage(err);
-      this.logger.error(`GitHub callback failed: ${message}`, err instanceof Error ? err.stack : undefined);
+      this.logger.error(
+        `GitHub callback failed: ${message}`,
+        err instanceof Error ? err.stack : undefined,
+      );
       const reason = encodeURIComponent(message);
       const slug = await this.github.getProjectSlug(projectId);
       const base = slug
@@ -128,6 +153,29 @@ export class GithubController {
   @UseGuards(AuthGuard, OrgGuard)
   listRepos(@CurrentOrg() orgId: string, @Param("id") id: string) {
     return this.github.listRepos(orgId, id);
+  }
+
+  @Get("projects/:id/github/manage-url")
+  @UseGuards(AuthGuard, OrgGuard)
+  async getManageUrl(@CurrentOrg() orgId: string, @Param("id") id: string) {
+    const project = await this.prisma.project.findFirst({
+      where: { id, organizationId: orgId },
+      select: { githubInstallationId: true },
+    });
+    if (!project?.githubInstallationId) {
+      throw new BadRequestException("GitHub App not installed for this project");
+    }
+    try {
+      const url = await this.github.getManageUrl(project.githubInstallationId);
+      return { url };
+    } catch (err) {
+      this.logger.error(
+        `Failed to fetch GitHub manage URL for project ${id}: ${err instanceof Error ? err.message : err}`,
+      );
+      throw new ServiceUnavailableException(
+        "Could not fetch GitHub manage URL. The app installation may have been revoked.",
+      );
+    }
   }
 
   @Post("projects/:id/github/connect")

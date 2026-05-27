@@ -43,6 +43,21 @@ export class IndexingSseService implements OnModuleDestroy {
     );
   }
 
+  /**
+   * Complete and remove the subject for a projectId once indexing finishes
+   * (success or failure). Called by the indexing worker's finally block so
+   * subjects don't accumulate indefinitely. NestJS @Sse unsubscribes when the
+   * client disconnects, but the Subject itself would linger until this is
+   * called.
+   */
+  cleanup(projectId: string): void {
+    const subject = this.subjects.get(projectId);
+    if (subject) {
+      subject.complete();
+      this.subjects.delete(projectId);
+    }
+  }
+
   onModuleDestroy() {
     this.redis.disconnect();
     this.subscriber.disconnect();

@@ -1,5 +1,15 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: string,
+  ) {
+    super(`API error ${status}${body ? `: ${body}` : ""}`);
+    this.name = "ApiError";
+  }
+}
+
 export async function api<T>(
   path: string,
   options: RequestInit = {},
@@ -15,7 +25,7 @@ export async function api<T>(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text ? `API error ${res.status}: ${text}` : `API error ${res.status}`);
+    throw new ApiError(res.status, text);
   }
 
   if (res.status === 204) return undefined as T;

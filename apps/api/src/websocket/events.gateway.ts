@@ -13,6 +13,7 @@ import type {
   DeploymentStatusPayload,
   EnvironmentStatusPayload,
   IndexingCompletePayload,
+  GithubDisconnectedPayload,
 } from "@heizen/shared";
 
 @WebSocketGateway({
@@ -73,5 +74,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   emitIndexingComplete(orgId: string, payload: IndexingCompletePayload) {
     this.server.to(`org:${orgId}`).emit("indexing:complete", payload);
+  }
+
+  emitGithubDisconnected(orgId: string, payload: GithubDisconnectedPayload) {
+    this.server.to(`org:${orgId}`).emit("github:disconnected", payload);
   }
 }

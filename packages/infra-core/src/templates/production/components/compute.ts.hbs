@@ -7,7 +7,7 @@ import {
 {{#if hasDatabase}}import { db } from "./store"
 {{/if}}{{#if hasCache}}import { redis } from "./store"
 {{/if}}{{#if hasStorage}}import { bucket } from "./store"
-{{/if}}{{#if hasAlb}}import { {{#each servicesWithPort}}{{camel name}}Tg{{#unless @last}}, {{/unless}}{{/each}} } from "./loadbalancer"
+{{/if}}{{#if hasAlb}}import { httpListener{{#each servicesWithAlb}}, {{camel name}}Tg{{/each}} } from "./loadbalancer"
 {{/if}}import * as cfg from "./config"
 
 const prefix = "{{prefix}}"
@@ -23,17 +23,6 @@ const executionRole = new aws.iam.Role(`${prefix}-exec-role`, {
 new aws.iam.RolePolicyAttachment(`${prefix}-exec-role-policy`, {
   role:      executionRole.name,
   policyArn: "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
-})
-new aws.iam.RolePolicy(`${prefix}-exec-ecr-policy`, {
-  role: executionRole.id,
-  policy: JSON.stringify({
-    Version: "2012-10-17",
-    Statement: [{
-      Effect: "Allow",
-      Action: ["ecr:GetAuthorizationToken", "ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"],
-      Resource: "*",
-    }],
-  }),
 })
 
 // ── IAM: Task Role ─────────────────────────────────────────────────────────────
@@ -127,7 +116,7 @@ const {{camel name}}TaskDef = new aws.ecs.TaskDefinition(`${prefix}-{{name}}-tas
         },
       },
       {{#if healthCheck}}healthCheck: {
-        command:     ["CMD-SHELL", "curl -f http://localhost:{{port}}{{healthCheck.path}} || exit 1"],
+        command:     ["CMD-SHELL", "wget -qO- http://localhost:{{port}}{{healthCheck.path}} || exit 1"],
         interval:    30,
         timeout:     5,
         retries:     3,
@@ -158,13 +147,15 @@ export const {{camel name}}Service = new aws.ecs.Service(`${prefix}-{{name}}`, {
   enableExecuteCommand: true,
   forceNewDeployment:   true,
   tags: { Name: `${prefix}-{{name}}` },
-})
+}{{#if ../hasAlb}}{{#if targetGroupVar}}, {
+  dependsOn: [httpListener],
+}{{/if}}{{/if}})
 
 {{#if scalable}}
 const {{camel name}}ScalingTarget = new aws.appautoscaling.Target(`${prefix}-{{name}}-scaling`, {
   maxCapacity:      {{scaling.max}},
   minCapacity:      {{scaling.min}},
-  resourceId:       pulumi.interpolate`service/${cluster.name}/${{{camel name}}Service.name}`,
+  resourceId:       pulumi.all([cluster.name, {{camel name}}Service.name]).apply(([c, s]) => `service/${c}/${s}`),
   scalableDimension: "ecs:service:DesiredCount",
   serviceNamespace:  "ecs",
 })

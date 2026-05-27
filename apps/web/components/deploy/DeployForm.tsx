@@ -95,7 +95,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
   const isWorker = service.type === "worker";
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50">
+    <div className="rounded-lg border border-border bg-card/50">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <Input
           value={service.name}
@@ -112,7 +112,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
               port: type === "worker" ? undefined : (service.port ?? 3000),
             });
           }}
-          className="h-7 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+          className="h-7 rounded-md border border-border bg-background px-2 text-xs"
         >
           <option value="backend">backend</option>
           <option value="frontend">frontend</option>
@@ -122,7 +122,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="text-xs text-zinc-500 hover:text-zinc-300"
+          className="text-xs text-muted-foreground hover:text-foreground/90"
         >
           {expanded ? "▲ less" : "▼ more"}
         </button>
@@ -130,7 +130,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
           <button
             type="button"
             onClick={onRemove}
-            className="text-zinc-600 hover:text-red-400"
+            className="text-muted-foreground/70 hover:text-destructive"
             aria-label="Remove service"
           >
             <X size={14} />
@@ -138,13 +138,13 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 border-t border-zinc-800/50 px-3 pb-3 pt-2">
+      <div className="grid grid-cols-2 gap-2 border-t border-border/50 px-3 pb-3 pt-2">
         {!isWorker && (
           <div>
-            <p className="mb-1 text-xs text-zinc-500">
+            <p className="mb-1 text-xs text-muted-foreground">
               Port{" "}
               {service.port === undefined ? (
-                <span className="text-amber-500">⚠ required</span>
+                <span className="text-warning-foreground">⚠ required</span>
               ) : null}
             </p>
             <Input
@@ -161,7 +161,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
           </div>
         )}
         <div className={isWorker ? "col-span-2" : ""}>
-          <p className="mb-1 text-xs text-zinc-500">Start command</p>
+          <p className="mb-1 text-xs text-muted-foreground">Start command</p>
           <Input
             value={service.command}
             onChange={(e) => onUpdate({ command: e.target.value })}
@@ -172,10 +172,10 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
       </div>
 
       {expanded && (
-        <div className="space-y-3 border-t border-zinc-800/50 px-3 pb-3 pt-2">
+        <div className="space-y-3 border-t border-border/50 px-3 pb-3 pt-2">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <p className="mb-1 text-xs text-zinc-500">vCPU</p>
+              <p className="mb-1 text-xs text-muted-foreground">vCPU</p>
               <select
                 value={service.cpu}
                 onChange={(e) => {
@@ -188,7 +188,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
                     : opt.memoryOptions[0]!;
                   onUpdate({ cpu, memory: mem });
                 }}
-                className="flex h-7 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+                className="flex h-7 w-full rounded-md border border-border bg-background px-2 text-xs"
               >
                 {FARGATE_CPU_OPTIONS.map((o) => (
                   <option key={o.cpu} value={o.cpu}>
@@ -198,11 +198,11 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
               </select>
             </div>
             <div>
-              <p className="mb-1 text-xs text-zinc-500">Memory</p>
+              <p className="mb-1 text-xs text-muted-foreground">Memory</p>
               <select
                 value={service.memory}
                 onChange={(e) => onUpdate({ memory: Number(e.target.value) })}
-                className="flex h-7 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+                className="flex h-7 w-full rounded-md border border-border bg-background px-2 text-xs"
               >
                 {cpuOption.memoryOptions.map((mb) => (
                   <option key={mb} value={mb}>
@@ -214,7 +214,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <p className="mb-1 text-xs text-zinc-500">Min</p>
+              <p className="mb-1 text-xs text-muted-foreground">Min</p>
               <Input
                 type="number"
                 value={service.scaling.min}
@@ -227,7 +227,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
               />
             </div>
             <div>
-              <p className="mb-1 text-xs text-zinc-500">Max</p>
+              <p className="mb-1 text-xs text-muted-foreground">Max</p>
               <Input
                 type="number"
                 value={service.scaling.max}
@@ -240,7 +240,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
               />
             </div>
             <div>
-              <p className="mb-1 text-xs text-zinc-500">CPU target %</p>
+              <p className="mb-1 text-xs text-muted-foreground">CPU target %</p>
               <Input
                 type="number"
                 value={service.scaling.cpuTarget}
@@ -259,7 +259,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
           {!isWorker && (
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <p className="mb-1 text-xs text-zinc-500">Health check path</p>
+                <p className="mb-1 text-xs text-muted-foreground">Health check path</p>
                 <Input
                   value={service.healthCheck?.path ?? "/health"}
                   onChange={(e) =>
@@ -274,7 +274,7 @@ function ServiceCard({ service, onUpdate, onRemove }: ServiceCardProps) {
                 />
               </div>
               <div>
-                <p className="mb-1 text-xs text-zinc-500">Success codes</p>
+                <p className="mb-1 text-xs text-muted-foreground">Success codes</p>
                 <Input
                   value={service.healthCheck?.codes ?? "200"}
                   onChange={(e) =>
@@ -461,28 +461,28 @@ export function DeployForm({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border-zinc-800 bg-zinc-900 p-5">
+      <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border-border bg-card p-5">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-base font-semibold">
             Deploy to {envType} — Step {step}/3
           </h2>
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-zinc-800 hover:text-white"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <X size={16} />
           </button>
         </div>
 
         {deployError && (
-          <p className="mb-4 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          <p className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {deployError}
           </p>
         )}
 
         {step === 1 && (
           <div className="space-y-6">
-            <div className="rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2.5 text-xs text-zinc-400">
+            <div className="rounded-md border border-foreground/20 bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
               {missingPorts
                 ? "⚠ Ports were not detected — fill them in below before deploying."
                 : "Review and edit your configuration. All fields are customizable."}
@@ -516,7 +516,7 @@ export function DeployForm({
             <div className="space-y-3">
               <p className="text-sm font-medium">Infrastructure</p>
 
-              <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+              <div className="space-y-3 rounded-lg border border-border bg-card/50 p-3">
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -539,7 +539,7 @@ export function DeployForm({
                 {config.database.engine === "postgres" && (
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <p className="mb-1 text-xs text-zinc-500">Instance size</p>
+                      <p className="mb-1 text-xs text-muted-foreground">Instance size</p>
                       <select
                         value={config.database.size ?? "micro"}
                         onChange={(e) =>
@@ -550,7 +550,7 @@ export function DeployForm({
                             },
                           })
                         }
-                        className="flex h-8 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+                        className="flex h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
                       >
                         {DB_SIZES.map((s) => (
                           <option key={s.value} value={s.value}>
@@ -560,7 +560,7 @@ export function DeployForm({
                       </select>
                     </div>
                     <div>
-                      <p className="mb-1 text-xs text-zinc-500">DB name</p>
+                      <p className="mb-1 text-xs text-muted-foreground">DB name</p>
                       <Input
                         value={config.database.dbName ?? ""}
                         onChange={(e) =>
@@ -576,7 +576,7 @@ export function DeployForm({
                 )}
               </div>
 
-              <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+              <div className="space-y-3 rounded-lg border border-border bg-card/50 p-3">
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -601,7 +601,7 @@ export function DeployForm({
                         cache: { ...config.cache, size: e.target.value as CacheSize },
                       })
                     }
-                    className="flex h-8 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+                    className="flex h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
                   >
                     {CACHE_SIZES.map((s) => (
                       <option key={s.value} value={s.value}>
@@ -613,7 +613,7 @@ export function DeployForm({
               </div>
 
               <div className="flex gap-3">
-                <div className="flex flex-1 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
+                <div className="flex flex-1 items-center gap-2 rounded-lg border border-border bg-card/50 px-3 py-2.5">
                   <input
                     type="checkbox"
                     id="s3-toggle"
@@ -627,7 +627,7 @@ export function DeployForm({
                     S3 Storage
                   </label>
                 </div>
-                <div className="flex flex-1 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
+                <div className="flex flex-1 items-center gap-2 rounded-lg border border-border bg-card/50 px-3 py-2.5">
                   <input
                     type="checkbox"
                     id="alb-toggle"
@@ -667,7 +667,7 @@ export function DeployForm({
                         },
                       })
                     }
-                    className="mt-1 flex h-8 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs"
+                    className="mt-1 flex h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
                   >
                     <option value="none">None ($0/mo)</option>
                     <option value="single">Single NAT (~$35/mo)</option>
@@ -677,7 +677,7 @@ export function DeployForm({
               </div>
               <div>
                 <Label className="text-xs">
-                  Domain <span className="text-zinc-500">(optional)</span>
+                  Domain <span className="text-muted-foreground">(optional)</span>
                 </Label>
                 <Input
                   value={config.domain ?? ""}
@@ -716,7 +716,7 @@ export function DeployForm({
                   aria-label="Copy environment ID"
                 >
                   {copiedEnvId ? (
-                    <Check size={14} className="text-green-500" />
+                    <Check size={14} className="text-success" />
                   ) : (
                     <Copy size={14} />
                   )}
@@ -753,8 +753,8 @@ export function DeployForm({
             <Button size="sm" onClick={verifyAws} variant="outline">
               Test connection
             </Button>
-            {verifyResult && <p className="text-sm text-green-500">{verifyResult}</p>}
-            {verifyError && <p className="text-sm text-red-400">{verifyError}</p>}
+            {verifyResult && <p className="text-sm text-success">{verifyResult}</p>}
+            {verifyError && <p className="text-sm text-destructive">{verifyError}</p>}
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => goToStep(1)}>
                 Back
@@ -780,10 +780,10 @@ export function DeployForm({
                 className="mt-1.5 font-mono text-xs"
               />
               {imageUriError && (
-                <p className="mt-1.5 text-xs text-red-400">{imageUriError}</p>
+                <p className="mt-1.5 text-xs text-destructive">{imageUriError}</p>
               )}
             </div>
-            <div className="space-y-1 rounded-md border border-zinc-800 bg-zinc-950 p-4 text-sm">
+            <div className="space-y-1 rounded-md border border-border bg-background p-4 text-sm">
               <p>Region: {config.region}</p>
               <p>Domain: {config.domain || "None"}</p>
               <p>Services: {config.services.map((s) => s.name).join(", ")}</p>
@@ -793,11 +793,11 @@ export function DeployForm({
             <CostEstimator config={config} />
             <Separator />
             {missingCount > 0 && (
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-                <p className="text-sm font-medium text-amber-400">
+              <div className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3">
+                <p className="text-sm font-medium text-warning-foreground">
                   ⚠ {missingCount} secret{missingCount !== 1 ? "s" : ""} have no value
                 </p>
-                <p className="mt-1 text-xs text-zinc-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Open Secrets Manager to fill them in before deploying.
                   Your app will receive empty strings for these keys at runtime.
                 </p>

@@ -160,10 +160,10 @@ export default function ProjectOverviewPage({
       </div>
 
       <div className="mb-3 flex items-center gap-3">
-        <span className="text-xs font-semibold uppercase tracking-widest text-zinc-600">
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/70">
           Environments
         </span>
-        <div className="flex-1 border-t border-zinc-800/50" />
+        <div className="flex-1 border-t border-border/50" />
       </div>
 
       <div className="mb-8 grid gap-3 sm:grid-cols-2">
@@ -173,11 +173,11 @@ export default function ProjectOverviewPage({
           return (
             <div
               key={env.id}
-              className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:border-zinc-700"
+              className="rounded-lg border border-border bg-card/50 p-4 transition-colors hover:border-foreground/20"
             >
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Icon size={15} className="text-zinc-400" />
+                  <Icon size={15} className="text-muted-foreground" />
                   <span className="text-sm font-medium capitalize">{slug}</span>
                 </div>
                 <StatusBadge status={env.status} />
@@ -205,37 +205,37 @@ export default function ProjectOverviewPage({
       </div>
 
       <div className="mb-3 flex items-center gap-3">
-        <span className="text-xs font-semibold uppercase tracking-widest text-zinc-600">
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/70">
           Recent deployments
         </span>
-        <div className="flex-1 border-t border-zinc-800/50" />
+        <div className="flex-1 border-t border-border/50" />
       </div>
 
       {deployments.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 py-12 text-center">
-          <History size={20} className="text-zinc-600" />
-          <p className="mt-3 text-sm text-zinc-400">No deployments yet</p>
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
+          <History size={20} className="text-muted-foreground/70" />
+          <p className="mt-3 text-sm text-muted-foreground">No deployments yet</p>
         </div>
       ) : (
-        <div className="rounded-lg border border-zinc-800">
+        <div className="rounded-lg border border-border">
           {deployments.map((d) => (
             <Link
               key={d.id}
               href={`/projects/${project.slug}/${d.envSlug}/deployments/${d.id}`}
-              className="flex cursor-pointer items-center gap-3 border-b border-zinc-800/50 px-4 py-3 transition-colors last:border-0 hover:bg-zinc-900/50"
+              className="flex cursor-pointer items-center gap-3 border-b border-border/50 px-4 py-3 transition-colors last:border-0 hover:bg-card/50"
             >
               <StatusDot status={d.status} />
-              <span className="text-sm capitalize text-zinc-300">{d.envSlug}</span>
-              <span className="text-xs text-zinc-500">{timeAgo(d.createdAt)}</span>
-              <span className="text-xs text-zinc-600">
+              <span className="text-sm capitalize text-foreground/90">{d.envSlug}</span>
+              <span className="text-xs text-muted-foreground">{timeAgo(d.createdAt)}</span>
+              <span className="text-xs text-muted-foreground/70">
                 {formatDuration(d.startedAt ?? d.createdAt, d.completedAt)}
               </span>
-              <ArrowRight size={14} className="ml-auto text-zinc-600" />
+              <ArrowRight size={14} className="ml-auto text-muted-foreground/70" />
             </Link>
           ))}
           <Link
             href={`/projects/${project.slug}/deployments`}
-            className="block px-4 py-3 text-xs text-zinc-500 hover:text-zinc-300"
+            className="block px-4 py-3 text-xs text-muted-foreground hover:text-foreground"
           >
             View all deployments →
           </Link>

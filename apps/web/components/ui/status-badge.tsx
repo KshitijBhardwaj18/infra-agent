@@ -1,20 +1,43 @@
+import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-const colors: Record<
-  string,
-  { dot: string; text: string; bg: string }
-> = {
-  LIVE: { dot: "bg-green-500", text: "text-green-400", bg: "bg-green-500/10" },
-  FAILED: { dot: "bg-red-500", text: "text-red-400", bg: "bg-red-500/10" },
-  DEPLOYING: {
-    dot: "bg-blue-500 animate-pulse",
-    text: "text-blue-400",
-    bg: "bg-blue-500/10",
+const statusBadgeVariants = cva(
+  "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium tabular-nums",
+  {
+    variants: {
+      variant: {
+        default: "bg-secondary text-secondary-foreground",
+        success: "bg-success/10 text-success ring-1 ring-success/20",
+        warning: "bg-warning/10 text-warning-foreground ring-1 ring-warning/30",
+        destructive: "bg-destructive/10 text-destructive ring-1 ring-destructive/20",
+        info: "bg-info/10 text-info ring-1 ring-info/20",
+        muted: "bg-muted text-muted-foreground",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
   },
-  SUCCESS: { dot: "bg-green-500", text: "text-green-400", bg: "bg-green-500/10" },
-  NOT_DEPLOYED: { dot: "bg-zinc-600", text: "text-zinc-400", bg: "bg-zinc-800" },
-  QUEUED: { dot: "bg-zinc-500", text: "text-zinc-400", bg: "bg-zinc-800" },
-  CANCELLED: { dot: "bg-zinc-500", text: "text-zinc-400", bg: "bg-zinc-800" },
+);
+
+const dotVariants: Record<string, string> = {
+  LIVE: "bg-success",
+  FAILED: "bg-destructive",
+  DEPLOYING: "bg-info animate-pulse",
+  SUCCESS: "bg-success",
+  NOT_DEPLOYED: "bg-muted-foreground/50",
+  QUEUED: "bg-muted-foreground/50",
+  CANCELLED: "bg-muted-foreground/50",
+};
+
+const badgeVariantMap: Record<string, VariantProps<typeof statusBadgeVariants>["variant"]> = {
+  LIVE: "success",
+  FAILED: "destructive",
+  DEPLOYING: "info",
+  SUCCESS: "success",
+  NOT_DEPLOYED: "muted",
+  QUEUED: "muted",
+  CANCELLED: "muted",
 };
 
 function normalizeStatus(status: string) {
@@ -31,19 +54,13 @@ export function StatusBadge({
   className?: string;
 }) {
   const key = normalizeStatus(status);
-  const style = colors[key] ?? colors.QUEUED;
+  const variant = badgeVariantMap[key] ?? "muted";
+  const dotClass = dotVariants[key] ?? dotVariants.QUEUED;
   const display = label ?? status.replace(/_/g, " ").toLowerCase();
 
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium capitalize",
-        style.bg,
-        style.text,
-        className,
-      )}
-    >
-      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", style.dot)} />
+    <span className={cn(statusBadgeVariants({ variant }), "capitalize", className)}>
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dotClass)} />
       {display}
     </span>
   );
@@ -51,6 +68,6 @@ export function StatusBadge({
 
 export function StatusDot({ status, className }: { status: string; className?: string }) {
   const key = normalizeStatus(status);
-  const style = colors[key] ?? colors.QUEUED;
-  return <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", style.dot, className)} />;
+  const dotClass = dotVariants[key] ?? dotVariants.QUEUED;
+  return <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dotClass, className)} />;
 }

@@ -26,7 +26,7 @@ export function IndexingProgress({ events }: { events: IndexingSsePayload[] }) {
   const isComplete = completedSteps.has("complete") && !completeError;
 
   return (
-    <div className="mx-auto mt-16 max-w-sm rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+    <div className="mx-auto mt-16 max-w-sm rounded-lg border border-border bg-card p-5">
       <h2 className="text-base font-medium">Analysing your codebase</h2>
       <p className="mt-1 text-sm text-muted-foreground">This takes about 10 seconds.</p>
 
@@ -41,18 +41,18 @@ export function IndexingProgress({ events }: { events: IndexingSsePayload[] }) {
           return (
             <div key={step.key} className="flex items-center gap-3">
               {failed ? (
-                <XCircle size={16} className="shrink-0 text-red-500" />
+                <XCircle size={16} className="shrink-0 text-destructive" />
               ) : done ? (
-                <CheckCircle2 size={16} className="shrink-0 text-green-500" />
+                <CheckCircle2 size={16} className="shrink-0 text-success" />
               ) : active ? (
-                <Loader2 size={16} className="shrink-0 animate-spin text-blue-500" />
+                <Loader2 size={16} className="shrink-0 animate-spin text-info" />
               ) : (
-                <Circle size={16} className="shrink-0 text-zinc-700" />
+                <Circle size={16} className="shrink-0 text-foreground/20" />
               )}
               <span
                 className={cn(
                   "text-sm",
-                  failed ? "text-red-400" : done || active ? "text-white" : "text-zinc-600",
+                  failed ? "text-destructive" : done || active ? "text-foreground" : "text-muted-foreground/70",
                   active && "animate-pulse",
                 )}
               >
@@ -63,7 +63,7 @@ export function IndexingProgress({ events }: { events: IndexingSsePayload[] }) {
         })}
       </div>
       {completeError && (
-        <p className="mt-4 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400">
+        <p className="mt-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {completeError}
         </p>
       )}

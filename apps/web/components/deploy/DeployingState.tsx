@@ -72,9 +72,9 @@ export function DeployingState({
         : "Preparing";
 
   return (
-    <div className="mx-auto mt-16 max-w-sm rounded-lg border border-zinc-800 bg-zinc-900 p-5">
+    <div className="mx-auto mt-16 max-w-sm rounded-lg border border-border bg-card p-5">
       <div className="flex justify-center">
-        <Loader2 size={24} className="animate-spin text-blue-500" />
+        <Loader2 size={24} className="animate-spin text-info" />
       </div>
       <h2 className="mt-4 text-base font-medium capitalize">
         Deploying to {envType}

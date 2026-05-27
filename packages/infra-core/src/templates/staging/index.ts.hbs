@@ -1,10 +1,8 @@
 {{#if hasAlb}}import { alb } from "./components/loadbalancer"
-{{/if}}import {
-{{#if hasDatabase}}  db,
-{{/if}}{{#if hasCache}}  redis,
-{{/if}}{{#if hasStorage}}  bucket,
-{{/if}}} from "./components/store"
-import { cluster{{#each services}}, {{camel name}}Service{{/each}} } from "./components/compute"
+{{/if}}{{#if hasDatabase}}import { db } from "./components/store"
+{{/if}}{{#if hasCache}}import { redis } from "./components/store"
+{{/if}}{{#if hasStorage}}import { bucket } from "./components/store"
+{{/if}}import { cluster{{#each services}}, {{camel name}}Service{{/each}} } from "./components/compute"
 import { vpc } from "./components/networking"
 
 {{#if hasAlb}}export const albDnsName    = alb.dnsName

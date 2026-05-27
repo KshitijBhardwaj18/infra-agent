@@ -23,12 +23,12 @@ interface Project {
 function StatusDot({ status }: { status: string }) {
   const color =
     status === "LIVE"
-      ? "bg-green-500"
+      ? "bg-success"
       : status === "FAILED"
-        ? "bg-red-500"
+        ? "bg-destructive"
         : status === "DEPLOYING"
-          ? "bg-blue-500 animate-pulse"
-          : "bg-zinc-500";
+          ? "bg-info animate-pulse"
+          : "bg-muted-foreground";
 
   return <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", color)} />;
 }
@@ -38,7 +38,7 @@ function EnvBadge({ env }: { env: Environment }) {
   const status = env.status.toLowerCase().replace("_", " ");
 
   return (
-    <Badge variant="outline" className="gap-1.5 font-normal text-zinc-300">
+    <Badge variant="outline" className="gap-1.5 font-normal text-foreground/90">
       <StatusDot status={env.status} />
       {label} · {status}
     </Badge>
@@ -51,7 +51,7 @@ export function ProjectCard({ project }: { project: Project }) {
 
   return (
     <Link href={`/projects/${project.slug}`}>
-      <div className="cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900 p-4 transition-colors hover:border-zinc-700">
+      <div className="cursor-pointer rounded-lg border border-border bg-card p-4 transition-colors hover:border-foreground/20">
         <div className="flex items-start justify-between gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-violet-600 text-sm font-semibold text-white">
             {initial}
@@ -62,7 +62,7 @@ export function ProjectCard({ project }: { project: Project }) {
         </div>
 
         <div className="mt-3">
-          <p className="text-sm font-medium text-white">{project.name}</p>
+          <p className="text-sm font-medium text-foreground">{project.name}</p>
           <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             <GitBranch size={12} />
             {connected ? `${project.githubOwner}/${project.githubRepo}` : "No repository linked"}

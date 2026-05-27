@@ -21,6 +21,7 @@ Handlebars.registerHelper("json", (obj: unknown) =>
 Handlebars.registerHelper("eq", (a: unknown, b: unknown) => a === b);
 Handlebars.registerHelper("ne", (a: unknown, b: unknown) => a !== b);
 Handlebars.registerHelper("join", (arr: string[], sep: string) => arr.join(sep));
+Handlebars.registerHelper("inc", (n: number) => n + 1);
 
 const TEMPLATE_FILES: Array<{ src: string; dest: string }> = [
   { src: "Pulumi.yaml.hbs", dest: "Pulumi.yaml" },
@@ -70,7 +71,13 @@ export async function renderTemplates(
     const templatePath = path.join(templatesDir, src);
     const templateSource = await fs.readFile(templatePath, "utf-8");
     const compiled = Handlebars.compile(templateSource, { noEscape: true });
-    const rendered = compiled(ctx);
+    let rendered = compiled(ctx);
+    if (dest === "Pulumi.yaml") {
+      rendered = rendered
+        .split("\n")
+        .filter((line) => !/^\s*pulumi:template:/.test(line))
+        .join("\n");
+    }
     const outputPath = path.join(outputDir, dest);
     await fs.writeFile(outputPath, rendered, "utf-8");
   }

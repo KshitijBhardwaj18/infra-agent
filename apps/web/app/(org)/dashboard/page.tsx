@@ -1,15 +1,15 @@
 "use client";
 
 import { Suspense, useEffect, useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Plus, FolderGit2, Rocket, Activity } from "lucide-react";
+import { Plus, FolderGit2, Rocket, Activity, X } from "lucide-react";
 import { ProjectCard } from "@/components/dashboard/ProjectCard";
-import { GitHubInstallError } from "@/components/github/GitHubInstallError";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useSession } from "@/lib/auth-client";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useEnvironmentStatus } from "@/hooks/useWebSocket";
 
 interface Project {
@@ -33,21 +33,47 @@ function greeting() {
   return "Good evening";
 }
 
+function errorCodeToTitle(code: string): string {
+  const map: Record<string, string> = {
+    github_state_invalid: "GitHub install link expired or invalid",
+    github_state_missing: "GitHub install state was missing",
+    github_state_expired: "GitHub install link expired — please try connecting again",
+    github_install_missing: "GitHub did not return an installation ID",
+    github_install_failed: "GitHub install failed",
+    github_user_mismatch: "GitHub install was initiated by a different user",
+    github_missing_project: "Missing project context",
+    github_project_not_found: "Project not found",
+    github_forbidden: "You don't have access to this project",
+  };
+  return map[code] ?? "GitHub install error";
+}
+
 export default function DashboardPage() {
+  return (
+    <Suspense>
+      <DashboardPageContent />
+    </Suspense>
+  );
+}
+
+function DashboardPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const errorCode = searchParams.get("error");
+  const errorReason = searchParams.get("reason");
+  const [errorDismissed, setErrorDismissed] = useState(false);
 
   useEffect(() => {
     api<Project[]>("/api/projects")
       .then(setProjects)
-      .catch((err: Error) => {
-        const msg = err.message;
-        if (msg.includes("No organization")) {
-          router.replace("/onboarding");
-        } else if (msg.includes("401")) {
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 401) {
           router.replace("/login");
+        } else if (err instanceof Error && err.message.includes("No organization")) {
+          router.replace("/onboarding");
         }
       })
       .finally(() => setLoading(false));
@@ -86,9 +112,28 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl p-6">
-      <Suspense>
-        <GitHubInstallError />
-      </Suspense>
+      {errorCode && !errorDismissed && (
+        <div className="mb-6 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-destructive">
+                {errorCodeToTitle(errorCode)}
+              </p>
+              {errorReason && (
+                <p className="mt-1 text-xs text-muted-foreground">{errorReason}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setErrorDismissed(true)}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Dismiss"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="mb-6 flex items-start justify-between">
         <div>
@@ -122,10 +167,12 @@ export default function DashboardPage() {
           ].map((stat) => (
             <div
               key={stat.label}
-              className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
+              className="rounded-lg border border-border bg-card/50 p-4"
             >
-              <stat.icon size={16} className="text-zinc-500" />
-              <p className="mt-3 text-2xl font-semibold">{stat.value}</p>
+              <div className="rounded-md bg-muted p-1.5 w-fit">
+                <stat.icon size={14} className="text-muted-foreground" />
+              </div>
+              <p className="mt-3 tabular-nums text-2xl font-semibold">{stat.value}</p>
               <p className="text-xs text-muted-foreground">{stat.label}</p>
             </div>
           ))}
@@ -133,11 +180,11 @@ export default function DashboardPage() {
       )}
 
       <div className="mb-3 flex items-center gap-3">
-        <span className="text-xs font-semibold uppercase tracking-widest text-zinc-600">
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/70">
           Recent projects
         </span>
-        <div className="flex-1 border-t border-zinc-800/50" />
-        <Link href="/projects" className="text-xs text-zinc-500 hover:text-zinc-300">
+        <div className="flex-1 border-t border-border/30" />
+        <Link href="/projects" className="text-xs text-muted-foreground hover:text-foreground">
           View all
         </Link>
       </div>
@@ -151,21 +198,19 @@ export default function DashboardPage() {
       )}
 
       {!loading && recentProjects.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 py-16 text-center">
-          <div className="mb-3 rounded-full bg-zinc-900 p-3">
-            <FolderGit2 size={20} className="text-zinc-600" />
-          </div>
-          <p className="text-sm font-medium text-zinc-400">No projects yet</p>
-          <p className="mt-1 text-xs text-zinc-600">
-            Create your first project to start deploying
-          </p>
-          <Link href="/projects/new" className="mt-4">
-            <Button size="sm">
-              <Plus size={14} className="mr-2" />
-              Create project
-            </Button>
-          </Link>
-        </div>
+        <EmptyState
+          icon={FolderGit2}
+          title="No projects yet"
+          description="Create your first project to start deploying"
+          action={
+            <Link href="/projects/new">
+              <Button size="sm">
+                <Plus size={14} className="mr-2" />
+                Create project
+              </Button>
+            </Link>
+          }
+        />
       )}
 
       {!loading && recentProjects.length > 0 && (

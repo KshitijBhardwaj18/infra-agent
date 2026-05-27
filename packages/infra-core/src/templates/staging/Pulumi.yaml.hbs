@@ -1,6 +1,9 @@
 name: {{prefix}}
-runtime: nodejs
 description: {{project}} infrastructure — {{env}}
+runtime:
+  name: nodejs
+  options:
+    packagemanager: npm
 config:
   aws:region:
     value: {{region}}

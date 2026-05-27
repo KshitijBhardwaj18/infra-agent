@@ -1,22 +1,37 @@
 import {
   Injectable,
   Inject,
+  Logger,
   NotFoundException,
+  BadRequestException,
   ConflictException,
 } from "@nestjs/common";
+import { Prisma } from "@heizen/db";
 import type { PrismaClient } from "@heizen/db";
 import { PRISMA } from "../prisma/prisma.module";
 
 @Injectable()
 export class ProjectsService {
+  private readonly logger = new Logger(ProjectsService.name);
+
   constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {}
 
   async create(orgId: string, name: string, slug: string) {
+    const trimmedName = name?.trim();
+    if (!trimmedName) {
+      throw new BadRequestException("Project name is required");
+    }
+    if (!slug || !/^[a-z0-9-]{2,40}$/.test(slug)) {
+      throw new BadRequestException(
+        "Slug must be 2-40 characters, lowercase letters, numbers, and hyphens only",
+      );
+    }
+
     try {
       const project = await this.prisma.project.create({
         data: {
           organizationId: orgId,
-          name,
+          name: trimmedName,
           slug,
           environments: {
             create: [
@@ -28,8 +43,15 @@ export class ProjectsService {
         include: { environments: true },
       });
       return project;
-    } catch {
-      throw new ConflictException("Project slug already exists in this organization");
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        throw new ConflictException("Project slug already exists in this organization");
+      }
+      this.logger.error("Failed to create project", err);
+      throw err;
     }
   }
 

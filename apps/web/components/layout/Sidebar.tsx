@@ -49,9 +49,8 @@ function NavItem({
     <Link href={href}>
       <div
         className={cn(
-          "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors",
-          "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100",
-          active && "bg-zinc-800/80 text-white",
+          "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors",
+          active && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
           collapsed && "justify-center",
         )}
       >
@@ -63,9 +62,9 @@ function NavItem({
 }
 
 function SectionLabel({ label, collapsed }: { label: string; collapsed: boolean }) {
-  if (collapsed) return <div className="my-2 border-t border-zinc-800/50" />;
+  if (collapsed) return <div className="my-2 border-t border-sidebar-border" />;
   return (
-    <p className="mb-1 mt-4 px-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
+    <p className="mb-1 mt-4 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
       {label}
     </p>
   );
@@ -100,20 +99,20 @@ export function Sidebar({ projectSlug, projectName }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "flex h-screen shrink-0 flex-col border-r border-zinc-800/50 bg-zinc-950 transition-all duration-200",
-        collapsed ? "w-[52px]" : "w-[216px]",
+        "flex h-screen shrink-0 flex-col bg-sidebar border-r border-sidebar-border text-sidebar-foreground transition-all duration-200",
+        collapsed ? "w-[52px]" : "w-56",
       )}
     >
-      <div className="flex h-[52px] items-center justify-between border-b border-zinc-800/50 px-3">
+      <div className="flex h-[52px] items-center justify-between border-b border-sidebar-border px-3">
         <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/5 ring-1 ring-white/10">
-            <Zap size={13} className="text-white" />
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent ring-1 ring-sidebar-border">
+            <Zap size={13} className="text-sidebar-accent-foreground" />
           </div>
-          {!collapsed && <span className="text-sm font-semibold text-white">Heizen</span>}
+          {!collapsed && <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">Heizen</span>}
         </Link>
         <button
           onClick={toggle}
-          className="rounded-md p-1 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+          className="rounded-md p-1 text-muted-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
           {collapsed ? <PanelLeft size={14} /> : <PanelLeftClose size={14} />}
         </button>
@@ -147,7 +146,7 @@ export function Sidebar({ projectSlug, projectName }: SidebarProps) {
                 <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-gradient-to-br from-violet-500 to-blue-500 text-[10px] font-semibold text-white">
                   {(projectName ?? projectSlug ?? "P")[0]?.toUpperCase()}
                 </div>
-                <span className="truncate text-xs font-medium text-zinc-300">
+                <span className="truncate text-xs font-medium text-sidebar-foreground/90">
                   {projectName ?? projectSlug}
                 </span>
               </div>
@@ -201,31 +200,31 @@ export function Sidebar({ projectSlug, projectName }: SidebarProps) {
         )}
       </div>
 
-      <div className="border-t border-zinc-800/50 p-2">
+      <div className="border-t border-sidebar-border p-2">
         <DropdownMenu>
           <DropdownMenuTrigger
             className={cn(
-              "flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-sm transition-colors hover:bg-zinc-800/60",
+              "flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent",
               collapsed && "justify-center",
             )}
           >
             <Avatar className="h-6 w-6 shrink-0">
               <AvatarImage src={user?.image ?? undefined} alt={user?.name ?? "User"} />
-              <AvatarFallback className="bg-zinc-800 text-xs">{initials}</AvatarFallback>
+              <AvatarFallback className="bg-sidebar-accent text-xs">{initials}</AvatarFallback>
             </Avatar>
             {!collapsed && (
               <>
                 <div className="min-w-0 flex-1 text-left">
-                  <p className="truncate text-xs font-medium text-white">{user?.name ?? "User"}</p>
-                  <p className="truncate text-[10px] text-zinc-500">{user?.email ?? ""}</p>
+                  <p className="truncate text-xs font-medium text-sidebar-foreground">{user?.name ?? "User"}</p>
+                  <p className="truncate text-[10px] text-muted-foreground">{user?.email ?? ""}</p>
                 </div>
-                <ChevronDown size={12} className="shrink-0 text-zinc-600" />
+                <ChevronDown size={12} className="shrink-0 text-muted-foreground/70" />
               </>
             )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem
-              className="text-sm text-red-400 focus:text-red-400"
+              className="text-sm text-destructive focus:text-destructive"
               onClick={() =>
                 signOut({
                   fetchOptions: {

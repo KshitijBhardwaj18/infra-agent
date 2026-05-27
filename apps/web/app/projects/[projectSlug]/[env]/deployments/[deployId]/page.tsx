@@ -169,7 +169,7 @@ function DeploymentDetailContent({
         </p>
       </div>
 
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5">
+      <div className="rounded-lg border border-border bg-card/50 p-5">
         <div className="flex items-center gap-2">
           {STEPS.map((step, i) => {
             const state = stepStates[i];
@@ -177,34 +177,34 @@ function DeploymentDetailContent({
               <div key={step.key} className="flex flex-1 items-center gap-2">
                 <div className="flex flex-col items-center gap-2">
                   {state === "done" ? (
-                    <Check size={16} className="text-green-500" />
+                    <Check size={16} className="text-success" />
                   ) : state === "active" ? (
                     <Loader2
                       size={16}
-                      className="animate-spin text-blue-500"
+                      className="animate-spin text-info"
                     />
                   ) : state === "failed" ? (
-                    <X size={16} className="text-red-500" />
+                    <X size={16} className="text-destructive" />
                   ) : (
-                    <Circle size={16} className="text-zinc-700" />
+                    <Circle size={16} className="text-foreground/20" />
                   )}
                   <span
                     className={cn(
                       "text-xs uppercase tracking-wide",
                       state === "active"
-                        ? "text-white"
+                        ? "text-foreground"
                         : state === "done"
-                          ? "text-zinc-400"
+                          ? "text-muted-foreground"
                           : state === "failed"
-                            ? "text-red-400"
-                            : "text-zinc-600",
+                            ? "text-destructive"
+                            : "text-muted-foreground/70",
                     )}
                   >
                     {step.label}
                   </span>
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div className="mb-5 h-px flex-1 bg-zinc-800" />
+                  <div className="mb-5 h-px flex-1 bg-border" />
                 )}
               </div>
             );

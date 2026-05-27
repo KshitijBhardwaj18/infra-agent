@@ -13,7 +13,7 @@ export function AgentPanel({ projectId }: { projectId: string }) {
   const [collapsed, setCollapsed] = useState(false);
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<
-    Array<{ role: "user" | "assistant"; content: string }>
+    Array<{ id: string; role: "user" | "assistant"; content: string }>
   >([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -37,7 +37,7 @@ export function AgentPanel({ projectId }: { projectId: string }) {
     if (!message.trim() || loading) return;
     const userMsg = message.trim();
     setMessage("");
-    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "user", content: userMsg }]);
     setLoading(true);
 
     try {
@@ -47,12 +47,13 @@ export function AgentPanel({ projectId }: { projectId: string }) {
       );
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: res.message },
+        { id: crypto.randomUUID(), role: "assistant", content: res.message },
       ]);
     } catch (err) {
       setMessages((prev) => [
         ...prev,
         {
+          id: crypto.randomUUID(),
           role: "assistant",
           content: `Error: ${err instanceof Error ? err.message : "Unknown"}`,
         },
@@ -64,10 +65,10 @@ export function AgentPanel({ projectId }: { projectId: string }) {
 
   if (collapsed) {
     return (
-      <aside className="flex w-11 shrink-0 flex-col border-l border-zinc-800/50 bg-zinc-950">
+      <aside className="flex w-11 shrink-0 flex-col border-l border-border bg-background">
         <button
           onClick={toggle}
-          className="flex h-12 items-center justify-center text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-white"
+          className="flex h-12 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ChevronLeft size={15} />
         </button>
@@ -76,15 +77,15 @@ export function AgentPanel({ projectId }: { projectId: string }) {
   }
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-zinc-800/50 bg-zinc-950">
-      <div className="flex h-12 items-center justify-between border-b border-zinc-800/50 px-4">
+    <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-background">
+      <div className="flex h-12 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-2">
-          <Sparkles size={14} className="text-zinc-400" />
+          <Sparkles size={14} className="text-muted-foreground" />
           <span className="text-sm font-medium">Agent</span>
         </div>
         <button
           onClick={toggle}
-          className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-white"
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ChevronRight size={15} />
         </button>
@@ -97,14 +98,14 @@ export function AgentPanel({ projectId }: { projectId: string }) {
           </p>
         )}
         <div className="space-y-3">
-          {messages.map((m, i) => (
+          {messages.map((m) => (
             <div
-              key={i}
+              key={m.id}
               className={cn(
                 "rounded-lg px-3 py-2 text-sm",
                 m.role === "user"
-                  ? "ml-6 bg-zinc-800 text-white"
-                  : "mr-6 border border-zinc-800 bg-zinc-900 text-zinc-200",
+                  ? "ml-6 bg-muted text-foreground"
+                  : "mr-6 border border-border bg-card text-foreground/90",
               )}
             >
               {m.content}

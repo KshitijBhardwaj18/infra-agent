@@ -8,7 +8,8 @@ import { ProjectCard } from "@/components/dashboard/ProjectCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api } from "@/lib/api";
+import { EmptyState } from "@/components/ui/empty-state";
+import { api, ApiError } from "@/lib/api";
 import { useEnvironmentStatus } from "@/hooks/useWebSocket";
 
 interface Project {
@@ -33,12 +34,11 @@ export default function ProjectsPage() {
   useEffect(() => {
     api<Project[]>("/api/projects")
       .then(setProjects)
-      .catch((err: Error) => {
-        const msg = err.message;
-        if (msg.includes("No organization")) {
-          router.replace("/onboarding");
-        } else if (msg.includes("401")) {
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 401) {
           router.replace("/login");
+        } else if (err instanceof Error && err.message.includes("No organization")) {
+          router.replace("/onboarding");
         }
       })
       .finally(() => setLoading(false));
@@ -74,7 +74,7 @@ export default function ProjectsPage() {
           <p className="mt-0.5 text-sm text-muted-foreground">
             {loading
               ? "Loading projects..."
-              : `${projects.length} project${projects.length !== 1 ? "s" : ""} in your workspace`}
+              : <span className="tabular-nums">{projects.length} project{projects.length !== 1 ? "s" : ""} in your workspace</span>}
           </p>
         </div>
         <Link href="/projects/new">
@@ -87,7 +87,7 @@ export default function ProjectsPage() {
 
       {!loading && projects.length > 0 && (
         <div className="relative mb-6 max-w-sm">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -106,28 +106,27 @@ export default function ProjectsPage() {
       )}
 
       {!loading && projects.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 py-16 text-center">
-          <div className="mb-3 rounded-full bg-zinc-900 p-3">
-            <FolderGit2 size={20} className="text-zinc-600" />
-          </div>
-          <p className="text-sm font-medium text-zinc-400">No projects yet</p>
-          <p className="mt-1 text-xs text-zinc-600">
-            Create your first project to start deploying infrastructure
-          </p>
-          <Link href="/projects/new" className="mt-4">
-            <Button size="sm">
-              <Plus size={14} className="mr-2" />
-              Create project
-            </Button>
-          </Link>
-        </div>
+        <EmptyState
+          icon={FolderGit2}
+          title="No projects yet"
+          description="Create your first project to start deploying infrastructure"
+          action={
+            <Link href="/projects/new">
+              <Button size="sm">
+                <Plus size={14} className="mr-2" />
+                Create project
+              </Button>
+            </Link>
+          }
+        />
       )}
 
       {!loading && projects.length > 0 && filtered.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-800 py-16 text-center">
-          <p className="text-sm font-medium text-zinc-400">No matching projects</p>
-          <p className="mt-1 text-xs text-zinc-600">Try a different search term</p>
-        </div>
+        <EmptyState
+          icon={Search}
+          title="No matching projects"
+          description="Try a different search term"
+        />
       )}
 
       {!loading && filtered.length > 0 && (

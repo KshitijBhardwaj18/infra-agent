@@ -3,10 +3,9 @@
 import { Suspense, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Copy, Check, ExternalLink } from "lucide-react";
+import { Copy, Check, ExternalLink, X } from "lucide-react";
 import type { HeizenConfig } from "@heizen/shared";
 import { ConnectGitHub } from "@/components/github/ConnectGitHub";
-import { GitHubInstallError } from "@/components/github/GitHubInstallError";
 import { IndexingProgress } from "@/components/github/IndexingProgress";
 import { IndexingResults } from "@/components/indexing/IndexingResults";
 import { DeployForm } from "@/components/deploy/DeployForm";
@@ -76,6 +75,21 @@ function buildDefaultHeizenConfig(
   };
 }
 
+function errorCodeToTitle(code: string): string {
+  const map: Record<string, string> = {
+    github_state_invalid: "GitHub install link expired or invalid",
+    github_state_missing: "GitHub install state was missing",
+    github_state_expired: "GitHub install link expired — please try connecting again",
+    github_install_missing: "GitHub did not return an installation ID",
+    github_install_failed: "GitHub install failed",
+    github_user_mismatch: "GitHub install was initiated by a different user",
+    github_missing_project: "Missing project context",
+    github_project_not_found: "Project not found",
+    github_forbidden: "You don't have access to this project",
+  };
+  return map[code] ?? "GitHub install error";
+}
+
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -87,7 +101,7 @@ function CopyButton({ value }: { value: string }) {
 
   return (
     <Button variant="ghost" size="icon" onClick={copy} className="h-7 w-7 shrink-0">
-      {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+      {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
     </Button>
   );
 }
@@ -119,6 +133,9 @@ function EnvironmentPageContent({
   const router = useRouter();
   const searchParams = useSearchParams();
   const defaultTab = searchParams.get("tab") === "variables" ? "variables" : "overview";
+  const errorCode = searchParams.get("error");
+  const errorReason = searchParams.get("reason");
+  const [errorDismissed, setErrorDismissed] = useState(false);
   const [projectSlug, setProjectSlug] = useState("");
   const [envType, setEnvType] = useState<"staging" | "production">("staging");
   const [project, setProject] = useState<Project | null>(null);
@@ -241,17 +258,40 @@ function EnvironmentPageContent({
   if (!project.githubOwner) {
     return (
       <div className="mx-auto max-w-5xl p-6">
-        <GitHubInstallError />
+        {errorCode && !errorDismissed && (
+          <div className="mb-6 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-destructive">
+                  {errorCodeToTitle(errorCode)}
+                </p>
+                {errorReason && (
+                  <p className="mt-1 text-xs text-muted-foreground">{errorReason}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setErrorDismissed(true)}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Dismiss"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
         <ConnectGitHub
           projectId={project.id}
           installationId={project.githubInstallationId}
           environmentId={environment.id}
+          currentEnv={envType}
           onRepoConnected={() => {
             setIndexingError(null);
             setIndexing(true);
             resetIndexEvents();
             void load(projectSlug, envType);
           }}
+          onInstallationCleared={() => void load(projectSlug, envType)}
         />
       </div>
     );
@@ -262,7 +302,7 @@ function EnvironmentPageContent({
       <div className="mx-auto mt-16 max-w-sm">
         <IndexingProgress events={indexEvents} />
         {indexingError && (
-          <p className="mt-4 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          <p className="mt-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {indexingError}
           </p>
         )}
@@ -275,7 +315,7 @@ function EnvironmentPageContent({
       <div className="flex h-full min-h-[480px] items-center justify-center p-8">
         <div className="max-w-sm text-center">
           <h2 className="mb-2 text-base font-semibold">Indexing failed</h2>
-          <p className="mb-6 text-sm text-red-400">{indexingError}</p>
+          <p className="mb-6 text-sm text-destructive">{indexingError}</p>
           <Button onClick={startIndexing}>Try again</Button>
         </div>
       </div>
@@ -299,13 +339,13 @@ function EnvironmentPageContent({
 
     return (
       <div className="mx-auto max-w-5xl space-y-6 p-6">
-        <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+        <div className="flex items-center justify-between rounded-lg border border-border bg-card p-4">
           <div className="flex items-center gap-3">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+            <span className="h-2 w-2 animate-pulse rounded-full bg-success" />
             <span className="text-sm font-medium capitalize">{envType}</span>
-            <span className="text-sm font-medium text-green-400">Live</span>
+            <span className="text-sm font-medium text-success">Live</span>
             {environment.lastDeployedAt && (
-              <span className="text-sm text-muted-foreground">
+              <span className="tabular-nums text-sm text-muted-foreground">
                 · Last deployed {new Date(environment.lastDeployedAt).toLocaleString()}
               </span>
             )}
@@ -321,7 +361,7 @@ function EnvironmentPageContent({
             <TabsTrigger value="variables">
               Environment Variables
               {missingEnvCount > 0 && (
-                <span className="ml-1.5 rounded-full bg-yellow-500/20 px-1.5 py-0.5 text-[10px] text-yellow-400">
+                <span className="ml-1.5 rounded-full bg-warning/20 px-1.5 py-0.5 text-[10px] text-warning-foreground">
                   {missingEnvCount}
                 </span>
               )}
@@ -330,18 +370,18 @@ function EnvironmentPageContent({
 
           <TabsContent value="overview" className="space-y-6">
             <div className="grid gap-3 lg:grid-cols-2">
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+              <div className="rounded-lg border border-border bg-card p-4">
                 <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
                   Endpoints
                 </p>
                 {appUrl ? (
                   <div className="mt-3 space-y-2">
-                    <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
+                    <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
                       <a
                         href={appUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-1 truncate text-sm text-blue-400 hover:underline"
+                        className="flex-1 truncate text-sm text-info hover:underline"
                       >
                         {outputs?.albDnsName}
                       </a>
@@ -358,13 +398,13 @@ function EnvironmentPageContent({
                 )}
               </div>
 
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+              <div className="rounded-lg border border-border bg-card p-4">
                 <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
                   DNS Configuration
                 </p>
                 {environment.heizenConfig.domain && outputs?.albDnsName ? (
                   <div className="mt-3 space-y-3">
-                    <div className="rounded-md border border-zinc-800 bg-zinc-950 p-3 text-sm">
+                    <div className="rounded-md border border-border bg-background p-3 text-sm">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-muted-foreground">Type</span>
                         <Badge variant="outline">CNAME</Badge>
@@ -434,18 +474,18 @@ function EnvironmentPageContent({
               missingEnvCount={missingEnvCount}
             />
             {suggestionCount > 0 && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5">
                 <span className="mt-0.5 text-xs">💡</span>
                 <div>
-                  <p className="text-xs text-amber-400">
+                  <p className="text-xs text-warning-foreground">
                     {suggestionCount} environment variable
                     {suggestionCount !== 1 ? "s" : ""} detected
                   </p>
-                  <p className="mt-0.5 text-xs text-zinc-500">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     Open{" "}
                     <Link
                       href={`/projects/${projectSlug}/secrets`}
-                      className="underline hover:text-zinc-300"
+                      className="underline hover:text-foreground/90"
                     >
                       Secrets Manager
                     </Link>{" "}
@@ -455,7 +495,7 @@ function EnvironmentPageContent({
               </div>
             )}
           </div>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <div className="rounded-lg border border-border bg-card p-4">
             <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Summary
             </p>

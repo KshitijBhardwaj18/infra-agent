@@ -13,9 +13,10 @@ export const alb = new aws.lb.LoadBalancer(`${prefix}-alb`, {
   tags: { Name: `${prefix}-alb` },
 })
 
-// ── Target Groups (one per HTTP service) ──────────────────────────────────────
-{{#each servicesWithPort}}
+// ── Target Groups (only for services attached to this ALB) ────────
+{{#each servicesWithAlb}}
 export const {{camel name}}Tg = new aws.lb.TargetGroup(`${prefix}-{{name}}-tg`, {
+  name:                "{{tgName}}",
   port:                {{port}},
   protocol:            "HTTP",
   targetType:          "ip",
@@ -41,10 +42,13 @@ export const httpListener = new aws.lb.Listener(`${prefix}-http`, {
   loadBalancerArn: alb.arn,
   port:            80,
   protocol:        "HTTP",
-  defaultActions: [{
+  defaultActions: [{{#if defaultTargetGroupVar}}{
     type:           "forward",
     targetGroupArn: {{defaultTargetGroupVar}}.arn,
-  }],
+  }{{else}}{
+    type: "fixed-response",
+    fixedResponse: { contentType: "text/plain", statusCode: "503", messageBody: "No services available" },
+  }{{/if}}],
 })
 
 // ── Host-based routing (only for services with a custom domain) ───────────────
@@ -52,7 +56,7 @@ export const httpListener = new aws.lb.Listener(`${prefix}-http`, {
 {{#if domain}}
 new aws.lb.ListenerRule(`${prefix}-{{name}}-rule`, {
   listenerArn: httpListener.arn,
-  priority:    {{@index}}0,
+  priority:    {{inc @index}}0,
   actions:     [{ type: "forward", targetGroupArn: {{camel name}}Tg.arn }],
   conditions:  [{ hostHeader: { values: ["{{domain}}"] } }],
 })
