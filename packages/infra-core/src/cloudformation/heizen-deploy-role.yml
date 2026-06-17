@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Heizen deploy role. Creates an IAM role in this account that Heizen's
+  platform account can assume (via STS + external-id) to run Pulumi-managed
+  deploys (ECS + Fargate + RDS + ElastiCache + S3 + ALB + Lightsail + VPC).
+
+  After the stack creates, copy the output `HeizenDeployRoleArn` and paste it
+  into Heizen → Project → Settings → AWS → Role ARN.
+
+Parameters:
+  HeizenAccountId:
+    Type: String
+    Description: >
+      AWS account ID of the Heizen platform that will assume this role.
+      Find this in Heizen → Admin → System config → AWS, or ask your Heizen
+      provider.
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a 12-digit AWS account ID.
+
+  ExternalId:
+    Type: String
+    Description: >
+      The environment ID from Heizen. Required to defend against the AWS
+      "confused-deputy" attack — only Heizen calls with this exact value
+      can assume the role. Copy from Heizen → Project → Settings → AWS.
+    MinLength: 8
+    NoEcho: false
+
+  RoleName:
+    Type: String
+    Default: HeizenDeployRole
+    Description: Name for the IAM role.
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
+
+Resources:
+  HeizenDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${HeizenAccountId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
+      Description: >
+        Allows the Heizen platform account to deploy Pulumi-managed
+        infrastructure into this AWS account.
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
+        - arn:aws:iam::aws:policy/AmazonRDSFullAccess
+        - arn:aws:iam::aws:policy/AmazonElastiCacheFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+        - arn:aws:iam::aws:policy/AmazonECR-FullAccess
+        - arn:aws:iam::aws:policy/AWSLightsailFullAccess
+      Policies:
+        # Custom-scoped IAM policy. Avoids AdminAccess / IAMFullAccess so the
+        # role can't escalate. Only allows IAM actions Heizen needs to create
+        # ECS task/execution roles + instance profiles within this account.
+        - PolicyName: HeizenScopedIAM
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ManageDeployTimeRoles
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:UpdateRole
+                  - iam:UpdateRoleDescription
+                  - iam:ListRoles
+                  - iam:ListRoleTags
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:PassRole
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/*-exec-role"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/*-task-role"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/*-lightsail-*"
+              - Sid: ManageDeployTimeInstanceProfiles
+                Effect: Allow
+                Action:
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:ListInstanceProfiles
+                  - iam:ListInstanceProfilesForRole
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:instance-profile/*"
+              - Sid: ReadAccountForDeploys
+                Effect: Allow
+                # PassRole policy-attach guarded above; these are read-only.
+                Action:
+                  - iam:ListPolicies
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                  - sts:GetCallerIdentity
+                Resource: "*"
+
+Outputs:
+  HeizenDeployRoleArn:
+    Description: >
+      Copy this ARN and paste it into Heizen → Project → Settings → AWS →
+      Role ARN. The next deploy will use it.
+    Value: !GetAtt HeizenDeployRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-RoleArn"
+  ExternalIdConfigured:
+    Description: The external-id this role expects (must match Heizen env ID).
+    Value: !Ref ExternalId

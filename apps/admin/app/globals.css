@@ -1,0 +1,245 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  Design tokens — Phase 1 of mirroring dev-tools.
+  Key polish moves vs. the previous values:
+    - radius bumped 0.5rem → 0.725rem (rounder, more polished feel)
+    - primary tightened to a richer indigo (matches dev-tools' brand)
+    - muted-foreground lifted for better label readability
+    - border softened in light mode, made translucent in dark mode
+      (the design's "glass border" look on cards/inputs)
+    - card surface in dark mode lifted from --background (was 0.13 vs
+      0.09; now 0.205 vs 0.145) so cards visibly float
+  Sidebar tokens follow the same lift pattern.
+*/
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.4758 0.1734 274.5916);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --radius: 0.725rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --success: oklch(0.65 0.18 145);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.78 0.16 80);
+  --warning-foreground: oklch(0.145 0 0);
+  --info: oklch(0.62 0.18 240);
+  --info-foreground: oklch(0.985 0 0);
+  --purple: oklch(0.55 0.22 305);
+  --purple-foreground: oklch(0.985 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.4758 0.1734 274.5916);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --success: oklch(0.72 0.16 145);
+  --success-foreground: oklch(0.145 0 0);
+  --warning: oklch(0.82 0.15 80);
+  --warning-foreground: oklch(0.145 0 0);
+  --info: oklch(0.68 0.17 240);
+  --info-foreground: oklch(0.985 0 0);
+  --purple: oklch(0.72 0.20 305);
+  --purple-foreground: oklch(0.985 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+}
+
+@theme inline {
+  --font-sans: var(--font-inter);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  /* Radius scale matched to dev-tools: xs(−8) sm(−4) md(−2) lg(=) xl(+4). */
+  --radius-xs: calc(var(--radius) - 8px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-purple: var(--purple);
+  --color-purple-foreground: var(--purple-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  html {
+    @apply font-sans;
+    scroll-behavior: smooth;
+  }
+
+  /*
+    Smoother transitions on hover-heavy surfaces.
+
+    The first version of this applied a universal `*` transition,
+    which animated EVERY class swap including the sidebar's active-item
+    background flip on navigation. That read as a flicker — the
+    outgoing active item faded over 200ms while the new page's content
+    skeleton also appeared, stacking two animations on top of each
+    other right where the user's looking.
+
+    Solution: target only the elements that benefit from smoother
+    hovers (buttons, links, interactive cards) and let everything else
+    use Tailwind's per-utility transition (snappy 150ms or none).
+  */
+  a,
+  button,
+  [role="button"],
+  [role="menuitem"],
+  [role="tab"],
+  input,
+  select,
+  textarea,
+  summary {
+    transition-property: background-color, border-color, color, fill, stroke,
+      opacity, box-shadow, transform;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      transition-duration: 0s !important;
+      animation-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Smooth view transitions for in-app navigation when the browser
+     supports them. Falls back silently on older browsers. */
+  @view-transition {
+    navigation: auto;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 220ms;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /*
+    Delayed skeleton reveal.
+
+    Each admin page is a client component that fetches its own data on
+    mount. The loading=true initial state would normally show a skeleton
+    for as long as the request takes — even when the request returns in
+    50ms, the skeleton flashes briefly and reads as a flicker.
+
+    Solution: skeletons start invisible and only fade in after 200ms.
+    If real content arrives in <200ms (the common case), the skeleton
+    was never visible — no flicker. If the request is slow, the
+    skeleton fades in smoothly and replaces with content when ready.
+
+    Applied via [data-slot="skeleton"] (already on the shared Skeleton
+    component) so every existing usage gets this for free, no
+    per-page change.
+  */
+  @keyframes skeleton-fade-in {
+    to {
+      opacity: 1;
+    }
+  }
+  [data-slot="skeleton"] {
+    opacity: 0;
+    animation: skeleton-fade-in 180ms 200ms forwards;
+  }
+}

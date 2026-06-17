@@ -1,6 +1,7 @@
 import type { HeizenConfig } from "../types/config";
 import type { HeizenEnvConfig } from "../types/env-config";
 import { DB_PRESETS, CACHE_PRESETS } from "../types/presets";
+import { LIGHTSAIL_BUNDLE_PRESETS } from "@heizen/shared";
 import type { TemplateContext, ServiceCtx, ConfigVar } from "./types";
 
 function camelize(str: string): string {
@@ -20,8 +21,81 @@ function parseCommand(command: string): string[] {
 export function buildTemplateContext(
   cfg: HeizenConfig,
   envCfg: HeizenEnvConfig,
+  // Worker-threaded knobs not part of HeizenConfig. `envSlug` is the env's
+  // unique slug so custom envs get distinct resource names; it defaults to
+  // cfg.env, which for the scaffolded envs equals their slug (so the render
+  // is unchanged). Optional so staging/ECS callers are unaffected.
+  opts?: { ec2InstanceType?: string; envId?: string; envSlug?: string },
 ): TemplateContext {
-  const prefix = `${cfg.project}-${cfg.env}`;
+  // A blank region would render `aws:region:` empty into Pulumi.yaml and let
+  // the AWS provider silently fall back to its default chain — fail loudly.
+  if (!cfg.region || !cfg.region.trim()) {
+    throw new Error(
+      "HeizenConfig.region is required to build the deploy template context",
+    );
+  }
+  const prefix = `${cfg.project}-${opts?.envSlug ?? cfg.env}`;
+
+  // Normalize user-configured extra firewall ports once (cidr/description
+  // always filled) so both the Lightsail and EC2 templates render the same
+  // shape. Empty by default → the baseline 22/80/443 rules are unchanged.
+  const openPorts = (cfg.openPorts ?? []).map((p) => ({
+    port: p.port,
+    protocol: p.protocol,
+    cidr: p.cidr && p.cidr.trim() ? p.cidr.trim() : "0.0.0.0/0",
+    description: p.description?.trim() || "Custom port",
+  }));
+
+  // Lightsail (staging) template uses a much smaller context. None of
+  // the ECS-specific computation (services, scaling, ALB rules, RDS)
+  // applies. We pass the bundleId from the preset and let cloud-init
+  // do the rest via Pulumi config secrets supplied by the worker.
+  if (cfg.env === "staging") {
+    const bundleKey = cfg.lightsailBundle ?? "small";
+    const bundle = LIGHTSAIL_BUNDLE_PRESETS[bundleKey];
+    return {
+      prefix,
+      project: cfg.project,
+      env: cfg.env,
+      region: cfg.region,
+      domain: cfg.domain ?? "",
+      ecrImage: cfg.ecr.image,
+      ecrTag: cfg.ecr.tag,
+      fullImage: `${cfg.ecr.image}:${cfg.ecr.tag}`,
+      // The Lightsail template reads {{bundleId}}; the rest of these
+      // fields are required by the TemplateContext shape but unused.
+      bundleId: bundle.bundleId,
+      natEnabled: false,
+      natIsDual: false,
+      natIsSingle: false,
+      vpcCidr: "10.0.0.0/16",
+      ecsPortRangeFrom: 0,
+      ecsPortRangeTo: 0,
+      hasAlb: false,
+      hasDatabase: false,
+      hasCache: false,
+      hasStorage: false,
+      needsRdsSg: false,
+      needsRedisSg: false,
+      database: null,
+      cache: null,
+      services: [],
+      servicesWithDomain: [],
+      servicesWithPort: [],
+      servicesWithAlb: [],
+      defaultTargetGroupVar: "",
+      configExports: [],
+      logRetentionDays: 7,
+      containerInsights: false,
+      lokiLogs: cfg.observability?.logsDestination === "grafana-loki",
+      envId: opts?.envId ?? "",
+      // Default OFF: a static IP is opt-in. When off the box uses its
+      // dynamic public IP (which the template exports as staticIpAddress).
+      staticIpEnabled: cfg.staticIp?.enabled ?? false,
+      openPorts,
+    };
+  }
+
   const hasDatabase = cfg.database.engine === "postgres";
   const hasCache = cfg.cache.engine === "redis";
   const hasStorage = cfg.storage.enabled;
@@ -175,6 +249,8 @@ export function buildTemplateContext(
     ecrImage: cfg.ecr.image,
     ecrTag: cfg.ecr.tag,
     fullImage: `${cfg.ecr.image}:${cfg.ecr.tag}`,
+    // EC2 template only; default to a small general-purpose box.
+    ec2InstanceType: opts?.ec2InstanceType ?? "t3.medium",
     natEnabled: cfg.networking.nat !== "none",
     natIsDual: cfg.networking.nat === "dual",
     natIsSingle: cfg.networking.nat === "single",
@@ -188,22 +264,37 @@ export function buildTemplateContext(
     needsRdsSg: hasDatabase,
     needsRedisSg: hasCache,
     database: hasDatabase
-      ? {
-          instanceClass: DB_PRESETS[cfg.database.size!].instanceClass,
+      ? (() => {
+          // Default the size if unset — the EC2 RDS toggle enables
+          // postgres without forcing a size pick, and DB_PRESETS[undefined]
+          // would crash here. "micro" is the cheapest sane default.
+          const dbSize = cfg.database.size ?? "micro";
+          const preset = DB_PRESETS[dbSize];
+          return {
+          instanceClass: preset.instanceClass,
           dbName: cfg.database.dbName ?? cfg.project.replace(/-/g, "_"),
           dbUser: `${cfg.project.replace(/-/g, "_")}_admin`,
           multiAz: cfg.database.multiAz ?? false,
+          // Kept for legacy staging template which still reads this; the
+          // production template hardcodes false to keep `pulumi destroy`
+          // working without manual AWS unprotect dance.
           deletionProtection: cfg.database.deletionProtection ?? false,
           backupRetentionDays: cfg.database.backupRetentionDays ?? 7,
-          allocatedStorage: 20,
+          // Map storage to the DB size preset rather than a fixed 20GB.
+          // A db.t4g.large with 8GB RAM on 20GB storage would auto-scale
+          // or run out within a week of normal use.
+          allocatedStorage: preset.allocatedStorageGb,
           storageType: "gp3",
           engineVersion: "16.4",
           encrypted: true,
-        }
+          };
+        })()
       : null,
     cache: hasCache
       ? {
-          nodeType: CACHE_PRESETS[cfg.cache.size!].nodeType,
+          // Default the size if unset (same guard as the DB block) —
+          // CACHE_PRESETS[undefined] would otherwise crash.
+          nodeType: CACHE_PRESETS[cfg.cache.size ?? "micro"].nodeType,
           engineVersion: "7.1",
         }
       : null,
@@ -215,5 +306,11 @@ export function buildTemplateContext(
     configExports,
     logRetentionDays: cfg.env === "production" ? 90 : 7,
     containerInsights: cfg.env === "production",
+    lokiLogs: cfg.observability?.logsDestination === "grafana-loki",
+    envId: opts?.envId ?? "",
+    // Lightsail-only flag; inert for the ECS/EC2 templates which never read it.
+    staticIpEnabled: false,
+    // Consumed by the EC2 SG ingress; the ECS template ignores it.
+    openPorts,
   };
 }

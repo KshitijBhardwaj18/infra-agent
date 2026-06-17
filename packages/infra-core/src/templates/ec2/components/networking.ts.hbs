@@ -1,0 +1,76 @@
+import * as aws from "@pulumi/aws"
+
+const prefix = "{{prefix}}"
+
+// AZ lookup at deploy time (same pattern as the production template).
+const availableAzs = aws.getAvailabilityZonesOutput({ state: "available" })
+
+// ── VPC ─────────────────────────────────────────────────────────────────────
+export const vpc = new aws.ec2.Vpc(`${prefix}-vpc`, {
+  cidrBlock:          "{{vpcCidr}}",
+  enableDnsHostnames: true,
+  enableDnsSupport:   true,
+  tags: { Name: `${prefix}-vpc` },
+})
+
+const igw = new aws.ec2.InternetGateway(`${prefix}-igw`, {
+  vpcId: vpc.id,
+  tags: { Name: `${prefix}-igw` },
+})
+
+// ── Public subnets ────────────────────────────────────────────────────────────
+// Two AZs: the RDS DB subnet group requires >=2. The EC2 box lives in
+// subnet 1 with an Elastic IP (no ALB, so Caddy faces the internet
+// directly). No NAT/private subnets — RDS is reachable only via its SG.
+export const publicSubnet1 = new aws.ec2.Subnet(`${prefix}-public-1`, {
+  vpcId:               vpc.id,
+  cidrBlock:           "10.0.1.0/24",
+  availabilityZone:    availableAzs.names[0],
+  mapPublicIpOnLaunch: true,
+  tags: { Name: `${prefix}-public-1` },
+})
+export const publicSubnet2 = new aws.ec2.Subnet(`${prefix}-public-2`, {
+  vpcId:               vpc.id,
+  cidrBlock:           "10.0.2.0/24",
+  availabilityZone:    availableAzs.names[1],
+  mapPublicIpOnLaunch: true,
+  tags: { Name: `${prefix}-public-2` },
+})
+
+const publicRt = new aws.ec2.RouteTable(`${prefix}-public-rt`, {
+  vpcId: vpc.id,
+  routes: [{ cidrBlock: "0.0.0.0/0", gatewayId: igw.id }],
+  tags: { Name: `${prefix}-public-rt` },
+})
+new aws.ec2.RouteTableAssociation(`${prefix}-public-rta-1`, { subnetId: publicSubnet1.id, routeTableId: publicRt.id })
+new aws.ec2.RouteTableAssociation(`${prefix}-public-rta-2`, { subnetId: publicSubnet2.id, routeTableId: publicRt.id })
+
+// ── Security groups ────────────────────────────────────────────────────────────
+// Caddy on the box terminates TLS and faces the internet (no ALB), so
+// 80/443 are open; 22 for SSH/debug.
+export const ec2Sg = new aws.ec2.SecurityGroup(`${prefix}-ec2-sg`, {
+  vpcId: vpc.id,
+  ingress: [
+    { protocol: "tcp", fromPort: 22,  toPort: 22,  cidrBlocks: ["0.0.0.0/0"], description: "SSH" },
+    { protocol: "tcp", fromPort: 80,  toPort: 80,  cidrBlocks: ["0.0.0.0/0"], description: "HTTP (Caddy ACME + redirect)" },
+    { protocol: "tcp", fromPort: 443, toPort: 443, cidrBlocks: ["0.0.0.0/0"], description: "HTTPS" },
+{{!-- User-configured extra ports. The EC2 SG uses `cidrBlocks`; the Lightsail
+     instance uses `cidrs` — same value, different field name per the AWS API. --}}
+{{#each openPorts}}
+    { protocol: "{{protocol}}", fromPort: {{port}}, toPort: {{port}}, cidrBlocks: ["{{cidr}}"], description: "{{description}}" },
+{{/each}}
+  ],
+  egress: [{ protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] }],
+  tags: { Name: `${prefix}-ec2-sg` },
+})
+
+{{#if hasDatabase}}
+// RDS is only reachable from the box — never publicly, despite living in
+// a public subnet (the SG, not the subnet, gates access).
+export const rdsSg = new aws.ec2.SecurityGroup(`${prefix}-rds-sg`, {
+  vpcId: vpc.id,
+  ingress: [{ protocol: "tcp", fromPort: 5432, toPort: 5432, securityGroups: [ec2Sg.id], description: "From EC2 box" }],
+  egress: [{ protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] }],
+  tags: { Name: `${prefix}-rds-sg` },
+})
+{{/if}}

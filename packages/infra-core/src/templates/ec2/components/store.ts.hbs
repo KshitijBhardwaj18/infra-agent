@@ -1,0 +1,68 @@
+import * as aws from "@pulumi/aws"
+{{#if hasDatabase}}import { publicSubnet1, publicSubnet2, rdsSg } from "./networking"
+import * as cfg from "./config"
+{{/if}}
+
+const prefix = "{{prefix}}"
+
+{{#if hasDatabase}}
+// ── RDS PostgreSQL ────────────────────────────────────────────────────────────
+// Lives in the public subnets but is NOT publicly accessible — the
+// rds-sg only admits 5432 from the EC2 box, which reaches it over the
+// VPC-internal endpoint. Managed here so data survives box replacement.
+const dbSubnetGroup = new aws.rds.SubnetGroup(`${prefix}-db-subnets`, {
+  subnetIds: [publicSubnet1.id, publicSubnet2.id],
+  tags: { Name: `${prefix}-db-subnets` },
+})
+
+export const db = new aws.rds.Instance(`${prefix}-db`, {
+  engine:                "postgres",
+  engineVersion:         "{{database.engineVersion}}",
+  instanceClass:         "{{database.instanceClass}}",
+  dbName:                "{{database.dbName}}",
+  username:              "{{database.dbUser}}",
+  password:              cfg.dbPassword,
+  dbSubnetGroupName:     dbSubnetGroup.name,
+  vpcSecurityGroupIds:   [rdsSg.id],
+  allocatedStorage:      {{database.allocatedStorage}},
+  storageType:           "{{database.storageType}}",
+  storageEncrypted:      {{database.encrypted}},
+  multiAz:               {{database.multiAz}},
+  backupRetentionPeriod: {{database.backupRetentionDays}},
+  publiclyAccessible:    false,
+  // Platform-managed lifecycle: protection off + skip final snapshot so
+  // `pulumi destroy` completes without manual AWS intervention.
+  deletionProtection:    false,
+  skipFinalSnapshot:     true,
+  tags: { Name: `${prefix}-db` },
+})
+{{/if}}
+
+{{#if hasStorage}}
+// ── App storage S3 bucket ───────────────────────────────────────────────────
+// The application's own bucket (the "S3 Storage" toggle). Read/written
+// by the app via the EC2 instance role (see iam.ts); the bucket name is
+// injected into the box's .env as AWS_S3_BUCKET (see artifacts.ts).
+export const bucket = new aws.s3.BucketV2(`${prefix}-storage`, {
+  forceDestroy: true,
+  tags: { Name: `${prefix}-storage` },
+})
+
+new aws.s3.BucketVersioningV2(`${prefix}-storage-versioning`, {
+  bucket: bucket.id,
+  versioningConfiguration: { status: "Enabled" },
+})
+
+new aws.s3.BucketServerSideEncryptionConfigurationV2(`${prefix}-storage-encryption`, {
+  bucket: bucket.id,
+  rules: [{ applyServerSideEncryptionByDefault: { sseAlgorithm: "AES256" } }],
+})
+
+new aws.s3.BucketPublicAccessBlock(`${prefix}-storage-public-access`, {
+  bucket:                bucket.id,
+  blockPublicAcls:       true,
+  blockPublicPolicy:     true,
+  ignorePublicAcls:      true,
+  restrictPublicBuckets: true,
+})
+{{/if}}

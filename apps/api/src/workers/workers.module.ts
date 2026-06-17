@@ -6,6 +6,8 @@ import { GithubModule } from "../github/github.module";
 import { DeploymentsModule } from "../deployments/deployments.module";
 import { EnvVarsModule } from "../env-vars/env-vars.module";
 import { WebsocketModule } from "../websocket/websocket.module";
+import { ObservabilityModule } from "../observability/observability.module";
+import { DataSourcesModule } from "../data-sources/data-sources.module";
 import { EncryptionService } from "../common/services/encryption.service";
 
 @Module({
@@ -16,6 +18,8 @@ import { EncryptionService } from "../common/services/encryption.service";
     DeploymentsModule,
     EnvVarsModule,
     WebsocketModule,
+    ObservabilityModule,
+    DataSourcesModule,
   ],
   providers: [IndexingProcessor, DeploymentProcessor, EncryptionService],
 })

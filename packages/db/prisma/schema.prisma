@@ -22,6 +22,10 @@ model User {
   sessions      Session[]
   accounts      Account[]
   members       Member[]
+  systemRole     SystemRole       @default(MEMBER)
+  projectMembers ProjectMember[]
+  githubConnections   GithubConnection[]
+  auditLogs             AuditLog[]
 }
 
 model Session {
@@ -101,6 +105,7 @@ model Project {
   updatedAt            DateTime @updatedAt
   organization         Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   environments         Environment[]
+  members              ProjectMember[]
 
   @@unique([organizationId, slug])
 }
@@ -109,6 +114,16 @@ model Environment {
   id                   String          @id @default(cuid())
   projectId            String
   type                 EnvironmentType
+  // Display name, URL-safe slug (unique per project), and tier. Added for
+  // multi-environment support. Nullable so the production deploy (which
+  // applies the schema with `prisma db push`, not migrations) can add them
+  // to the existing Environment rows without a backfill step — code resolves
+  // null slug/tier from `type` via resolveEnvDeploy(). New scaffolded and
+  // custom envs always set them. `tier` drives presets independently of the
+  // chosen template.
+  name                 String?
+  slug                 String?
+  tier                 EnvTier?
   awsAccountId         String?
   awsRoleArn           String?
   region               String?
@@ -118,8 +133,19 @@ model Environment {
   imageUri             String?
   setupComplete        Boolean         @default(false)
   heizenConfig         Json?
+  // Parsed docker-compose.yml from the last indexing run. Used by the
+  // Lightsail (staging) template to drive routing UI without re-cloning
+  // at form-render time. Source of truth at deploy is the live repo.
+  composeServicesCache Json?
+  composeFetchedAt     DateTime?
   stackOutputs         Json?
   status               EnvironmentStatus @default(NOT_DEPLOYED)
+  // Which deploy paradigm this env uses. Null = infer from `type`
+  // (PRODUCTION→ECS, STAGING→LIGHTSAIL) for back-compat with envs
+  // created before this field existed.
+  deployStrategy       DeployStrategy?
+  // EC2 instance type for the EC2_COMPOSE strategy (e.g. "t3.medium").
+  ec2InstanceType      String?
   lastDeployedAt       DateTime?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
@@ -127,8 +153,10 @@ model Environment {
   envVars              EnvVariable[]
   deployments          Deployment[]
   resources            StackResource[]
+  incidents            Incident[]
+  dataSources          DataSourceConnection[]
 
-  @@unique([projectId, type])
+  @@unique([projectId, slug])
 }
 
 model EnvVariable {
@@ -150,6 +178,10 @@ model Deployment {
   id             String           @id @default(cuid())
   environmentId  String
   triggeredBy    String
+  // DEPLOY = pulumi up (default — existing rows preserve their meaning).
+  // DESTROY = pulumi destroy. Separate row per teardown so the audit
+  // trail and log stream work identically to a deploy.
+  kind           DeploymentKind   @default(DEPLOY)
   commitSha      String?
   commitMessage  String?
   imageUri       String?
@@ -190,11 +222,61 @@ model StackResource {
   @@index([environmentId, type])
 }
 
+model ProjectMember {
+  id        String      @id @default(cuid())
+  userId    String
+  projectId String
+  role      ProjectRole
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@index([projectId])
+}
+
+model GithubConnection {
+  id              String            @id @default(cuid())
+  installationId  String            @unique
+  accountLogin    String
+  accountType     GithubAccountType
+  addedByUserId   String?
+  createdAt       DateTime          @default(now())
+  addedBy         User?             @relation(fields: [addedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([accountLogin])
+}
+
+model AuditLog {
+  id            String        @id @default(cuid())
+  actorId       String?
+  action        AuditAction
+  resourceType  AuditResource
+  resourceId    String?
+  metadata      Json?
+  createdAt     DateTime      @default(now())
+  actor         User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([resourceType, resourceId])
+  @@index([actorId])
+}
+
 // ============================================
 // ENUMS
 // ============================================
 
 enum EnvironmentType {
+  STAGING
+  PRODUCTION
+  CUSTOM
+}
+
+// Behavioral tier for an environment, independent of its display identity
+// (name/slug) and its template (deployStrategy). Drives presets, the
+// prefix/bucket envSlug semantics, and heizenConfig.env. STAGING/PRODUCTION
+// rows backfill to the matching tier.
+enum EnvTier {
   STAGING
   PRODUCTION
 }
@@ -208,6 +290,16 @@ enum EnvironmentStatus {
   DESTROYED
 }
 
+// Deploy paradigm for an environment.
+//   ECS          — Fargate task-per-service (production template)
+//   EC2_COMPOSE  — single EC2 box running docker-compose (ec2 template)
+//   LIGHTSAIL    — single Lightsail VM running docker-compose (lightsail template)
+enum DeployStrategy {
+  ECS
+  EC2_COMPOSE
+  LIGHTSAIL
+}
+
 enum DeploymentStatus {
   QUEUED
   DEPLOYING
@@ -216,7 +308,125 @@ enum DeploymentStatus {
   CANCELLED
 }
 
+enum DeploymentKind {
+  DEPLOY
+  DESTROY
+}
+
 enum DeploymentPhase {
   PULUMI
   SYSTEM
+}
+
+enum SystemRole {
+  MEMBER
+  ADMIN
+}
+
+enum ProjectRole {
+  OWNER
+  DEPLOYER
+  VIEWER
+}
+
+enum GithubAccountType {
+  USER
+  ORGANIZATION
+}
+
+enum AuditAction {
+  DEPLOY_TRIGGERED
+  DESTROY_TRIGGERED
+  ENV_VARS_REPLACED
+  GITHUB_CONNECTION_ADDED
+  GITHUB_CONNECTION_REMOVED
+  USER_CREATED
+  USER_ROLE_CHANGED
+  USER_DELETED
+  PROJECT_DELETED
+  PROJECT_MEMBER_ADDED
+  PROJECT_MEMBER_ROLE_CHANGED
+  PROJECT_MEMBER_REMOVED
+}
+
+enum AuditResource {
+  PROJECT
+  ENVIRONMENT
+  USER
+  GITHUB_CONNECTION
+  PROJECT_MEMBER
+}
+
+// ── Observability / incidents ───────────────────────────────────────────────
+// An incident is a detected (or manually-raised) problem on a deployed
+// environment. Source records where it came from (a health probe, a
+// Grafana alert, the agent's analysis, or a human). The agent enriches
+// incidents with a suggested remedy. `fingerprint` dedupes recurring
+// signals so a flapping check doesn't spawn a new incident each scan.
+model Incident {
+  id             String           @id @default(cuid())
+  environmentId  String
+  severity       IncidentSeverity
+  status         IncidentStatus   @default(OPEN)
+  source         IncidentSource
+  title          String
+  detail         String?
+  suggestedRemedy String?
+  // Stable key for an underlying condition (e.g. "http-5xx", "ec2-cpu",
+  // "grafana:<ruleUid>") used to reopen/update instead of duplicating.
+  fingerprint    String?
+  metadata       Json?
+  // Structured output of the intelligence layer (root cause, evidence,
+  // confidence, correlated deployment, suggested actions).
+  analysis       Json?
+  // Recurrence tracking (Sentry-style grouping): how many scans saw
+  // this signal firing, and when it was last observed.
+  occurrences    Int              @default(1)
+  lastSeenAt     DateTime         @default(now())
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  environment    Environment      @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@index([environmentId, status])
+  @@unique([environmentId, fingerprint])
+}
+
+enum IncidentSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum IncidentSource {
+  HEALTHCHECK
+  AGENT
+  MANUAL
+  DEPLOYMENT
+  LOGS
+  METRICS
+}
+
+// A per-environment connection to an external observability source
+// (e.g. the customer's own Grafana/Loki). `config` is an encrypted JSON
+// blob (endpoint, token, selector, labels…); readers decrypt it on use.
+model DataSourceConnection {
+  id            String      @id @default(cuid())
+  environmentId String
+  type          String
+  displayName   String
+  config        String
+  enabled       Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@index([environmentId])
 }

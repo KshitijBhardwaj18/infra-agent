@@ -37,20 +37,3 @@ export async function cleanupStaleDeployments(
     });
   }
 }
-
-/**
- * Same idea for indexing: if a job was active when the worker died, the
- * `jobId` lock prevents new indexing attempts. Clean up stranded indexing jobs.
- */
-export async function cleanupStaleIndexingJobs(
-  indexingQueue: Queue,
-): Promise<void> {
-  // Find jobs in active state with no running worker.
-  // BullMQ's stalled-job detection handles this automatically, but it has a
-  // ~30s delay. On startup, we eagerly clear any "active" indexing jobs since
-  // there's definitely no worker for them yet.
-  const active = await indexingQueue.getActive();
-  for (const job of active) {
-    await job.remove().catch(() => {});
-  }
-}

@@ -11,11 +11,16 @@ import {
 } from "@nestjs/common";
 import { AuthGuard } from "../common/guards/auth.guard";
 import { OrgGuard } from "../common/guards/org.guard";
+import {
+  ProjectRoleGuard,
+  RequireProjectRole,
+} from "../common/rbac";
 import { CurrentOrg } from "../common/decorators/current-org";
+import { CurrentUser } from "../common/decorators/current-user";
 import { EnvVarsService } from "./env-vars.service";
 
 @Controller("api/projects/:projectId/environments/:envId/env-vars")
-@UseGuards(AuthGuard, OrgGuard)
+@UseGuards(AuthGuard, OrgGuard, ProjectRoleGuard)
 export class EnvVarsController {
   constructor(private readonly envVars: EnvVarsService) {}
 
@@ -28,7 +33,32 @@ export class EnvVarsController {
     return this.envVars.list(orgId, projectId, envId);
   }
 
+  // Raw secrets (decrypted) — DEPLOYER/OWNER. Viewers see the keys
+  // via the regular /list, not the values.
+  @Get("raw")
+  @RequireProjectRole("OWNER", "DEPLOYER")
+  listRaw(
+    @CurrentOrg() orgId: string,
+    @Param("projectId") projectId: string,
+    @Param("envId") envId: string,
+  ) {
+    return this.envVars.listRaw(orgId, projectId, envId);
+  }
+
+  @Put("raw")
+  @RequireProjectRole("OWNER", "DEPLOYER")
+  replaceRaw(
+    @CurrentOrg() orgId: string,
+    @Param("projectId") projectId: string,
+    @Param("envId") envId: string,
+    @Body() body: { content: string },
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.envVars.replaceRaw(orgId, projectId, envId, body.content ?? "", user?.id ?? null);
+  }
+
   @Post()
+  @RequireProjectRole("OWNER", "DEPLOYER")
   create(
     @CurrentOrg() orgId: string,
     @Param("projectId") projectId: string,
@@ -39,6 +69,7 @@ export class EnvVarsController {
   }
 
   @Patch(":varId")
+  @RequireProjectRole("OWNER", "DEPLOYER")
   update(
     @CurrentOrg() orgId: string,
     @Param("projectId") projectId: string,
@@ -50,6 +81,7 @@ export class EnvVarsController {
   }
 
   @Delete(":varId")
+  @RequireProjectRole("OWNER", "DEPLOYER")
   remove(
     @CurrentOrg() orgId: string,
     @Param("projectId") projectId: string,
@@ -60,6 +92,7 @@ export class EnvVarsController {
   }
 
   @Patch(":varId/dismiss")
+  @RequireProjectRole("OWNER", "DEPLOYER")
   dismiss(
     @CurrentOrg() orgId: string,
     @Param("projectId") projectId: string,
@@ -70,6 +103,7 @@ export class EnvVarsController {
   }
 
   @Put("bulk")
+  @RequireProjectRole("OWNER", "DEPLOYER")
   bulk(
     @CurrentOrg() orgId: string,
     @Param("projectId") projectId: string,

@@ -1,6 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useState, useMemo } from "react";
+import { Suspense, useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Plus, FolderGit2, Rocket, Activity, X } from "lucide-react";
@@ -8,6 +9,7 @@ import { ProjectCard } from "@/components/dashboard/ProjectCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { useSession } from "@/lib/auth-client";
 import { api, ApiError } from "@/lib/api";
 import { useEnvironmentStatus } from "@/hooks/useWebSocket";
@@ -44,6 +46,8 @@ function errorCodeToTitle(code: string): string {
     github_missing_project: "Missing project context",
     github_project_not_found: "Project not found",
     github_forbidden: "You don't have access to this project",
+    github_install_admin_only:
+      "Only admins can install or change the GitHub App. Pick a repo from the existing connections instead, or ask an admin.",
   };
   return map[code] ?? "GitHub install error";
 }
@@ -56,32 +60,35 @@ export default function DashboardPage() {
   );
 }
 
+const PROJECTS_QUERY_KEY = ["projects"] as const;
+
 function DashboardPageContent() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
   const errorCode = searchParams.get("error");
   const errorReason = searchParams.get("reason");
   const [errorDismissed, setErrorDismissed] = useState(false);
 
-  useEffect(() => {
-    api<Project[]>("/api/projects")
-      .then(setProjects)
-      .catch((err: unknown) => {
-        if (err instanceof ApiError && err.status === 401) {
-          router.replace("/login");
-        } else if (err instanceof Error && err.message.includes("No organization")) {
-          router.replace("/onboarding");
-        }
-      })
-      .finally(() => setLoading(false));
-  }, [router]);
+  const { data: projects = [], isLoading: loading } = useQuery({
+    queryKey: PROJECTS_QUERY_KEY,
+    queryFn: () => api<Project[]>("/api/projects"),
+    retry: (failureCount, err) => {
+      // 401 → bounce to login, no retry
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/login");
+        return false;
+      }
+      return failureCount < 2;
+    },
+  });
 
+  // WebSocket environment-status events patch the cached query data so
+  // the dashboard updates live without a full refetch.
   useEnvironmentStatus((payload) => {
-    setProjects((prev) =>
-      prev.map((p) => ({
+    queryClient.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (prev) =>
+      prev?.map((p) => ({
         ...p,
         environments: p.environments.map((e) =>
           e.id === payload.environmentId ? { ...e, status: payload.status } : e,
@@ -108,7 +115,19 @@ function DashboardPageContent() {
   }, [projects]);
 
   const recentProjects = projects.slice(0, 3);
-  const firstName = session?.user?.name?.split(" ")[0] ?? "there";
+  // Bootstrap admin gets name="Heizen Admin" from the env config, which
+  // reads as the platform's name not the user's. Prefer the email local
+  // part (capitalized) as a more personal greeting when the stored name
+  // matches that generic default or is empty.
+  const firstName = (() => {
+    const raw = session?.user?.name?.split(" ")[0];
+    if (raw && raw.toLowerCase() !== "heizen") return raw;
+    const emailLocal = session?.user?.email?.split("@")[0];
+    if (emailLocal) {
+      return emailLocal.charAt(0).toUpperCase() + emailLocal.slice(1);
+    }
+    return "there";
+  })();
 
   return (
     <div className="mx-auto max-w-5xl p-6">
@@ -135,21 +154,19 @@ function DashboardPageContent() {
         </div>
       )}
 
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-base font-semibold">
-            {greeting()}, {firstName}
-          </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Here&apos;s what&apos;s happening in your workspace
-          </p>
-        </div>
-        <Link href="/projects/new">
-          <Button size="sm">
-            <Plus size={14} className="mr-2" />
-            New project
-          </Button>
-        </Link>
+      <div className="mb-6">
+        <PageHeader
+          title={`${greeting()}, ${firstName}`}
+          subtitle="Here's what's happening in your workspace"
+          actions={
+            <Link href="/projects/new">
+              <Button size="sm">
+                <Plus size={14} className="mr-2" />
+                New project
+              </Button>
+            </Link>
+          }
+        />
       </div>
 
       {loading ? (

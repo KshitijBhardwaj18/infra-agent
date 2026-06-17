@@ -1,0 +1,372 @@
+/*
+ * User login page — tokens + layout from the design handoff.
+ * Default declarations are the LIGHT theme; .dark on <html> (set by
+ * next-themes) flips them to dark via the :global(.dark) overrides.
+ *
+ * Accent: indigo (hue 274). Admin login uses the same shape with a
+ * violet accent — see admin's login.module.css.
+ */
+.root {
+  --bg: oklch(0.99 0.002 270);
+  --bg-2: oklch(0.975 0.003 270);
+  --panel: oklch(1 0 0);
+  --panel-2: oklch(0.965 0.004 270);
+  --line: oklch(0.9 0.006 270);
+  --line-soft: oklch(0.935 0.005 270);
+  --ink: oklch(0.22 0.012 270);
+  --ink-2: oklch(0.4 0.012 270);
+  --ink-3: oklch(0.52 0.012 270);
+  --ink-4: oklch(0.63 0.012 270);
+  --accent: oklch(0.515 0.22 274);
+  --field: oklch(0.985 0.003 270);
+  --accent-ink: #fff;
+  --err: oklch(0.72 0.17 25);
+
+  --disp: var(--font-space-grotesk), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+:global(.dark) .root {
+  --bg: oklch(0.165 0.005 270);
+  --bg-2: oklch(0.195 0.006 270);
+  --panel: oklch(0.225 0.007 270);
+  --panel-2: oklch(0.265 0.008 270);
+  --line: oklch(0.31 0.008 270);
+  --line-soft: oklch(0.255 0.007 270);
+  --ink: oklch(0.98 0.002 270);
+  --ink-2: oklch(0.78 0.006 270);
+  --ink-3: oklch(0.62 0.008 270);
+  --ink-4: oklch(0.48 0.008 270);
+  --accent: oklch(0.585 0.195 274);
+  --field: oklch(0.205 0.006 270);
+}
+
+.root ::selection { background: var(--accent); color: var(--accent-ink); }
+.root a { color: inherit; text-decoration: none; }
+
+.split { display: grid; grid-template-columns: 1fr 1fr; min-height: 100vh; }
+
+/* ── LEFT / BRAND ─────────────────────────────────────────── */
+.brandside {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(120% 100% at 0% 0%, var(--bg-2), var(--bg) 60%);
+  border-right: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 44px 52px;
+}
+.gridBg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--line) 50%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--line) 50%, transparent) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(ellipse 90% 80% at 30% 40%, #000 20%, transparent 80%);
+  opacity: 0.45;
+}
+.glow {
+  position: absolute;
+  z-index: 0;
+  width: 620px;
+  height: 620px;
+  left: -120px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: radial-gradient(circle, color-mix(in oklch, var(--accent) 22%, transparent), transparent 62%);
+  filter: blur(30px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.brand {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  flex: none;
+  /* The inline SVG draws a gradient shape on transparent background; a
+     dark fill behind it gives the logo a 'tile' look like dev-tools'. */
+  background: oklch(0.18 0 270);
+  padding: 5px;
+  box-shadow: 0 0 0 1px var(--line), 0 6px 18px -8px oklch(0 0 0 / 0.6);
+}
+.brandName {
+  font-family: var(--disp);
+  font-weight: 600;
+  font-size: 21px;
+  letter-spacing: -0.02em;
+}
+.pitch {
+  position: relative;
+  z-index: 2;
+  max-width: 30ch;
+}
+.pitch h1 {
+  font-family: var(--disp);
+  font-weight: 600;
+  font-size: clamp(34px, 3.6vw, 50px);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  margin: 0;
+}
+.pitch h1 em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+/* automation flow scene */
+.scene { position: relative; z-index: 1; margin: 30px 0; }
+.flow { width: 100%; height: auto; display: block; }
+.flow .edge { stroke: var(--line); stroke-width: 1.5; fill: none; }
+.flow .edgeLive {
+  stroke: color-mix(in oklch, var(--accent) 55%, transparent);
+  stroke-width: 1.7;
+  fill: none;
+  stroke-dasharray: 6 10;
+  animation: dash 1.2s linear infinite;
+}
+@keyframes dash { to { stroke-dashoffset: -16; } }
+.flow .node { fill: var(--panel); stroke: var(--line); stroke-width: 1.4; }
+.flow .nodeHot {
+  fill: var(--panel);
+  stroke: var(--accent);
+  stroke-width: 1.4;
+  filter: drop-shadow(0 0 8px color-mix(in oklch, var(--accent) 45%, transparent));
+}
+.flow .nlabel { font-family: var(--mono); font-size: 9.5px; fill: var(--ink-2); }
+.flow .glyph { stroke: var(--accent); stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.flow .pulse { fill: var(--accent); filter: drop-shadow(0 0 5px var(--accent)); }
+
+/* ── RIGHT / FORM ─────────────────────────────────────────── */
+.formside { display: flex; flex-direction: column; padding: 30px 40px; }
+.top { display: flex; align-items: center; justify-content: flex-end; gap: 14px; font-size: 14px; color: var(--ink-3); }
+.altLink {
+  color: var(--ink);
+  border: 1px solid var(--line);
+  padding: 8px 14px;
+  border-radius: 9px;
+  font-weight: 500;
+  transition: border-color 0.2s, background 0.2s;
+  cursor: pointer;
+}
+.altLink:hover { border-color: var(--ink-4); background: var(--panel); }
+.themeToggle {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+.themeToggle:hover { border-color: var(--ink-4); color: var(--ink); }
+.themeToggle svg { width: 18px; height: 18px; }
+
+.formwrap { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+.card { width: 100%; max-width: 388px; }
+.mobileBrand { display: none; }
+.card h2 { font-family: var(--disp); font-weight: 600; font-size: 28px; letter-spacing: -0.02em; margin: 0; }
+.sub { margin-top: 8px; color: var(--ink-3); font-size: 15px; }
+
+.field { margin-bottom: 15px; }
+.fieldFirst { margin-top: 26px; }
+.fieldLabel {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--ink-2);
+  margin-bottom: 7px;
+  font-weight: 500;
+}
+.inputWrap { position: relative; }
+.input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.input::placeholder { color: var(--ink-4); }
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent); }
+.toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--ink-4);
+  cursor: pointer;
+  padding: 7px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+}
+.toggle:hover { color: var(--ink-2); background: var(--panel); }
+.toggle svg { width: 18px; height: 18px; }
+.err { color: var(--err); font-size: 12.5px; margin-top: 6px; }
+.invalidInput { border-color: var(--err); }
+
+.remember {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 6px 0 20px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+}
+.rememberInput { position: absolute; opacity: 0; pointer-events: none; }
+.rememberBox {
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  border: 1.5px solid var(--line);
+  background: var(--field);
+  display: grid;
+  place-items: center;
+  transition: 0.15s;
+  flex: none;
+}
+.rememberBoxChecked { background: var(--accent); border-color: var(--accent); }
+.rememberBox svg { width: 11px; height: 11px; stroke: var(--accent-ink); stroke-width: 3; opacity: 0; transition: 0.15s; }
+.rememberBoxChecked svg { opacity: 1; }
+
+.submit {
+  width: 100%;
+  font-family: inherit;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: none;
+  border-radius: 10px;
+  padding: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  box-shadow: 0 0 24px -8px var(--accent);
+  transition: transform 0.12s, box-shadow 0.2s, filter 0.2s;
+}
+.submit:hover { transform: translateY(-1px); box-shadow: 0 0 30px -6px var(--accent); }
+.submit:disabled { cursor: default; transform: none; }
+.arrow { transition: transform 0.18s; }
+.submit:hover .arrow { transform: translateX(3px); }
+.submitLoading { pointer-events: none; filter: saturate(0.6) brightness(0.9); }
+.spin {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in oklch, var(--accent-ink) 40%, transparent);
+  border-top-color: var(--accent-ink);
+  border-radius: 50%;
+  animation: rot 0.7s linear infinite;
+}
+@keyframes rot { to { transform: rotate(360deg); } }
+
+.switch { margin-top: 22px; text-align: center; font-size: 14px; color: var(--ink-3); }
+.switchLink { color: var(--accent); font-weight: 500; }
+.switchLink:hover { text-decoration: underline; }
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ink-4);
+  font-family: var(--mono);
+}
+.footLinks { display: flex; gap: 18px; }
+.foot span span { cursor: default; }
+
+/* Secure banner — admin only, lives in the same module for parity */
+.secureBanner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+  border-radius: 10px;
+  padding: 10px 13px;
+  background: color-mix(in oklch, var(--accent) 9%, transparent);
+}
+.secureBanner svg { width: 16px; height: 16px; stroke: var(--accent); flex: none; }
+
+/* Admin brand badge */
+.adminBadge {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
+  padding: 3px 7px;
+  border-radius: 6px;
+  margin-left: 8px;
+}
+
+/* Admin radar scene */
+.radarScene { position: relative; z-index: 1; margin: 32px 0; display: flex; align-items: center; gap: 26px; }
+.radar { width: 168px; height: 168px; flex: none; position: relative; }
+.radar svg { width: 100%; height: 100%; display: block; }
+.radarRing { fill: none; stroke: var(--line); stroke-width: 1; }
+.radarCross { stroke: var(--line-soft); stroke-width: 1; }
+.radarSweep { transform-origin: 84px 84px; animation: sweep 3.4s linear infinite; }
+@keyframes sweep { to { transform: rotate(360deg); } }
+.radarBlip { fill: var(--accent); opacity: 0; }
+.radarBlip1 { animation: blip 3.4s linear infinite; animation-delay: 0.5s; }
+.radarBlip2 { animation: blip 3.4s linear infinite; animation-delay: 1.7s; }
+.radarBlip3 { animation: blip 3.4s linear infinite; animation-delay: 2.6s; }
+@keyframes blip { 0% { opacity: 1; } 35% { opacity: 1; } 75%, 100% { opacity: 0; } }
+.monwall { display: flex; flex-direction: column; gap: 11px; flex: 1; }
+.monrow { display: flex; align-items: center; gap: 11px; }
+.monrowLbl { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); width: 58px; flex: none; }
+.monrowTrack { flex: 1; height: 5px; border-radius: 4px; background: var(--line-soft); overflow: hidden; }
+.monrowFill { display: block; height: 100%; border-radius: 4px; background: var(--accent); transform-origin: left; animation: breathe 2.6s ease-in-out infinite; }
+.monrow:nth-child(2) .monrowFill { animation-delay: 0.4s; }
+.monrow:nth-child(3) .monrowFill { animation-delay: 0.9s; }
+.monrow:nth-child(4) .monrowFill { animation-delay: 1.3s; }
+@keyframes breathe { 0%, 100% { transform: scaleX(0.45); } 50% { transform: scaleX(0.92); } }
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 880px) {
+  .split { grid-template-columns: 1fr; }
+  .brandside { display: none; }
+  .mobileBrand { display: flex; align-items: center; gap: 11px; margin-bottom: 26px; }
+  .mobileBrand .brandName { font-size: 19px; }
+  .formside { padding: 22px 22px 30px; }
+  .top { justify-content: space-between; }
+}
+@media (max-width: 440px) {
+  .footLinks { gap: 12px; }
+}

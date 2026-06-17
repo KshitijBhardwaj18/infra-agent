@@ -11,12 +11,18 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { PrismaClient } from "@heizen/db";
 import { PRISMA } from "../prisma/prisma.module";
 import { EventsGateway } from "../websocket/events.gateway";
+import { env } from "../common/env";
 
 function verifyWebhookSignature(body: Buffer, signature: string | undefined): boolean {
-  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  const secret = env("GITHUB_WEBHOOK_SECRET");
   if (!secret) {
-    if (process.env.NODE_ENV === "production") return false;
-    return true; // dev/test only
+    if (
+      process.env.NODE_ENV === "development" &&
+      process.env.ALLOW_UNSIGNED_GITHUB_WEBHOOKS === "1"
+    ) {
+      return true;
+    }
+    return false;
   }
   if (!signature?.startsWith("sha256=")) return false;
   const expected = createHmac("sha256", secret).update(body).digest("hex");

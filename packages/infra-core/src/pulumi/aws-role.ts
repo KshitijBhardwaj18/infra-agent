@@ -39,3 +39,17 @@ export async function assumeCustomerRole(
     region,
   };
 }
+
+const ARN_ACCOUNT_RE = /^arn:aws:iam::(\d{12}):role\//;
+
+/**
+ * Extracts the 12-digit AWS account id from a role ARN
+ * (arn:aws:iam::<account>:role/<name>). Returns null for a missing or
+ * malformed ARN — the account is always derived from the role, never asked.
+ */
+export function accountIdFromRoleArn(
+  roleArn: string | null | undefined,
+): string | null {
+  if (!roleArn) return null;
+  return ARN_ACCOUNT_RE.exec(roleArn)?.[1] ?? null;
+}

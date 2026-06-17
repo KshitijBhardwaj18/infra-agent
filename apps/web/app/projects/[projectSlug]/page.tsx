@@ -1,20 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useProject, PROJECTS_QUERY_KEY } from "@/hooks/useProject";
 import { useRouter } from "next/navigation";
 import {
   Rocket,
   TestTube2,
+  Boxes,
+  Plus,
+  Trash2,
   ChevronDown,
   ArrowRight,
-  GitBranch,
   History,
 } from "lucide-react";
+import { NewEnvironmentModal } from "@/components/projects/NewEnvironmentModal";
+import { envSlugOf, envNameOf } from "@/lib/env-display";
 import { api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge, StatusDot } from "@/components/ui/status-badge";
+import { KindBadge } from "@/components/ui/kind-badge";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { timeAgo, formatDuration } from "@/lib/format";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +41,9 @@ interface Project {
   environments: Array<{
     id: string;
     type: string;
+    name: string | null;
+    slug: string | null;
+    tier: "STAGING" | "PRODUCTION" | null;
     status: string;
     lastDeployedAt: string | null;
     heizenConfig: unknown | null;
@@ -41,28 +53,11 @@ interface Project {
 interface DeploymentRow {
   id: string;
   status: string;
+  kind: "DEPLOY" | "DESTROY";
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
   envSlug: string;
-}
-
-function timeAgo(date: string) {
-  const diff = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-function formatDuration(start?: string | null, end?: string | null) {
-  if (!start) return "—";
-  const endMs = end ? new Date(end).getTime() : Date.now();
-  const secs = Math.floor((endMs - new Date(start).getTime()) / 1000);
-  if (secs < 60) return `${secs}s`;
-  return `${Math.floor(secs / 60)}m ${secs % 60}s`;
 }
 
 export default function ProjectOverviewPage({
@@ -71,40 +66,95 @@ export default function ProjectOverviewPage({
   params: Promise<{ projectSlug: string }>;
 }) {
   const router = useRouter();
-  const [project, setProject] = useState<Project | null>(null);
-  const [deployments, setDeployments] = useState<DeploymentRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { projectSlug } = use(params);
+  const { project, loading: projectLoading } = useProject(projectSlug);
+  const [showNewEnv, setShowNewEnv] = useState(false);
+  const [deletingEnvId, setDeletingEnvId] = useState<string | null>(null);
 
+  const deleteEnv = async (envId: string, envName: string) => {
+    if (!project) return;
+    if (
+      !window.confirm(
+        `Delete the "${envName}" environment? This can't be undone.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingEnvId(envId);
+    try {
+      await api(`/api/projects/${project.id}/environments/${envId}`, {
+        method: "DELETE",
+      });
+      await queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
+    } catch (err) {
+      window.alert(
+        err instanceof Error ? err.message : "Failed to delete environment.",
+      );
+    } finally {
+      setDeletingEnvId(null);
+    }
+  };
+
+  // The sidebar's "New environment" links here with ?new-env=1.
   useEffect(() => {
-    params.then(async ({ projectSlug }) => {
-      const projects = await api<Project[]>("/api/projects");
-      const p = projects.find((pr) => pr.slug === projectSlug);
-      if (!p) {
-        setLoading(false);
-        return;
-      }
-      setProject(p);
+    if (
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("new-env") === "1"
+    ) {
+      setShowNewEnv(true);
+    }
+  }, []);
 
-      const all: DeploymentRow[] = [];
-      for (const env of p.environments) {
-        const list = await api<
+  // One query per environment — useQueries runs them in parallel and
+  // each gets its own cache slot keyed by env.id so navigating away
+  // and back doesn't re-fetch.
+  const envQueries = useQueries({
+    queries: (project?.environments ?? []).map((env) => ({
+      queryKey: ["deployments", project?.id, env.id] as const,
+      queryFn: () =>
+        api<
           Array<{
             id: string;
             status: string;
+            kind: "DEPLOY" | "DESTROY";
             createdAt: string;
             startedAt: string | null;
             completedAt: string | null;
           }>
-        >(`/api/projects/${p.id}/environments/${env.id}/deployments`);
-        for (const d of list) {
-          all.push({ ...d, envSlug: env.type.toLowerCase() });
-        }
+        >(`/api/projects/${project!.id}/environments/${env.id}/deployments`),
+      enabled: !!project,
+      staleTime: 60_000,
+    })),
+  });
+
+  const envLoading = envQueries.some((q) => q.isLoading);
+  const loading = projectLoading || (!!project && envLoading);
+
+  // Flatten the per-env lists and tag each row with its envSlug, then
+  // sort by createdAt and keep the most recent 5.
+  const deployments: DeploymentRow[] = (() => {
+    if (!project) return [];
+    const all: DeploymentRow[] = [];
+    project.environments.forEach((env, idx) => {
+      const data = envQueries[idx]?.data ?? [];
+      for (const d of data) {
+        all.push({
+          ...d,
+          // Older rows may lack `kind` (added later); default to DEPLOY
+          // so the badge renders without crashing.
+          kind: d.kind ?? "DEPLOY",
+          // The env's real slug so deployment links resolve for custom envs
+          // (not env.type, which is "custom" for all of them).
+          envSlug: envSlugOf(env),
+        });
       }
-      all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setDeployments(all.slice(0, 5));
-      setLoading(false);
     });
-  }, [params]);
+    all.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    return all.slice(0, 5);
+  })();
 
   if (loading) {
     return (
@@ -120,43 +170,79 @@ export default function ProjectOverviewPage({
 
   if (!project) return null;
 
+  // Single label for the env card's primary button, routed by status so
+  // it stays in sync with what the env detail page actually shows. Must
+  // cover every EnvironmentStatus — falling through to "Configure" for an
+  // in-flight or failed env (as it used to) was misleading.
   const envAction = (env: Project["environments"][0]) => {
-    if (env.status === "LIVE") return "Open";
-    if (env.status === "DEPLOYING") return "View";
-    if (env.heizenConfig) return "Configure";
-    return "Set up";
+    switch (env.status) {
+      case "LIVE":
+        return "Open";
+      case "DEPLOYING":
+      case "DESTROYING":
+        return "View progress";
+      case "FAILED":
+        return "View error";
+      case "DESTROYED":
+        return "Redeploy";
+      default:
+        // NOT_DEPLOYED
+        return env.heizenConfig ? "Configure" : "Set up";
+    }
   };
+
+  // The secondary "Deploy" shortcut only makes sense when the env is
+  // idle. Hidden during DEPLOYING/DESTROYING (would start a second op the
+  // API rejects) and during FAILED — a failed run needs kind-aware
+  // recovery (a failed *destroy* must not offer redeploy), which only the
+  // env detail page knows. The FAILED card routes there via "View error".
+  const canQuickDeploy = (env: Project["environments"][0]) =>
+    env.heizenConfig != null &&
+    env.status !== "DEPLOYING" &&
+    env.status !== "DESTROYING" &&
+    env.status !== "FAILED";
 
   return (
     <div className="mx-auto max-w-5xl p-6">
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-base font-semibold">{project.name}</h1>
-          <p className="mt-0.5 flex items-center gap-1 text-sm text-muted-foreground">
-            <GitBranch size={12} />
-            {project.githubOwner
+      {showNewEnv && (
+        <NewEnvironmentModal
+          projectId={project.id}
+          projectSlug={project.slug}
+          onClose={() => setShowNewEnv(false)}
+        />
+      )}
+      <div className="mb-6">
+        <PageHeader
+          title={project.name}
+          subtitle={
+            project.githubOwner
               ? `${project.githubOwner}/${project.githubRepo} · ${project.githubBranch ?? "main"}`
-              : "GitHub not connected"}
-          </p>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground"
-          >
-            Deploy
-            <ChevronDown size={14} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => router.push(`/projects/${project.slug}/production`)}
-            >
-              Deploy to Production
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push(`/projects/${project.slug}/staging`)}>
-              Deploy to Staging
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              : "GitHub not connected"
+          }
+          actions={
+            <DropdownMenu>
+              <DropdownMenuTrigger className={buttonVariants({ size: "sm" })}>
+                Deploy
+                <ChevronDown size={14} className="ml-1" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {project.environments.map((env) => (
+                  <DropdownMenuItem
+                    key={env.id}
+                    onClick={() =>
+                      router.push(`/projects/${project.slug}/${envSlugOf(env)}`)
+                    }
+                  >
+                    Deploy to {envNameOf(env)}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem onClick={() => setShowNewEnv(true)}>
+                  <Plus size={14} className="mr-1.5" /> New environment
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          }
+        />
       </div>
 
       <div className="mb-3 flex items-center gap-3">
@@ -168,8 +254,13 @@ export default function ProjectOverviewPage({
 
       <div className="mb-8 grid gap-3 sm:grid-cols-2">
         {project.environments.map((env) => {
-          const Icon = env.type === "PRODUCTION" ? Rocket : TestTube2;
-          const slug = env.type.toLowerCase();
+          const Icon =
+            env.type === "CUSTOM"
+              ? Boxes
+              : (env.tier ?? env.type) === "PRODUCTION"
+                ? Rocket
+                : TestTube2;
+          const slug = envSlugOf(env);
           return (
             <div
               key={env.id}
@@ -178,7 +269,9 @@ export default function ProjectOverviewPage({
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Icon size={15} className="text-muted-foreground" />
-                  <span className="text-sm font-medium capitalize">{slug}</span>
+                  <span className="text-sm font-medium capitalize">
+                    {envNameOf(env)}
+                  </span>
                 </div>
                 <StatusBadge status={env.status} />
               </div>
@@ -193,10 +286,25 @@ export default function ProjectOverviewPage({
                     {envAction(env)}
                   </Button>
                 </Link>
-                {env.heizenConfig != null && (
+                {canQuickDeploy(env) && (
                   <Link href={`/projects/${project.slug}/${slug}`}>
-                    <Button size="sm">Deploy</Button>
+                    <Button size="sm">
+                      {env.status === "LIVE" ? "Redeploy" : "Deploy"}
+                    </Button>
                   </Link>
+                )}
+                {env.type === "CUSTOM" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void deleteEnv(env.id, envNameOf(env))}
+                    disabled={deletingEnvId === env.id}
+                    className="ml-auto text-muted-foreground hover:text-destructive"
+                    aria-label={`Delete ${envNameOf(env)}`}
+                    title="Delete environment"
+                  >
+                    <Trash2 size={14} />
+                  </Button>
                 )}
               </div>
             </div>
@@ -225,6 +333,7 @@ export default function ProjectOverviewPage({
               className="flex cursor-pointer items-center gap-3 border-b border-border/50 px-4 py-3 transition-colors last:border-0 hover:bg-card/50"
             >
               <StatusDot status={d.status} />
+              <KindBadge kind={d.kind} />
               <span className="text-sm capitalize text-foreground/90">{d.envSlug}</span>
               <span className="text-xs text-muted-foreground">{timeAgo(d.createdAt)}</span>
               <span className="text-xs text-muted-foreground/70">

@@ -8,8 +8,10 @@ import {
   Shield,
   Activity,
   Box,
+  ExternalLink,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { resourceConsoleUrl } from "@/lib/aws-console";
 
 interface StackResource {
   id: string;
@@ -17,6 +19,7 @@ interface StackResource {
   type: string;
   name: string;
   dependencies: string[];
+  properties?: { id?: string } | null;
 }
 
 type Category =
@@ -124,12 +127,23 @@ function shortType(type: string): string {
   return spaced;
 }
 
-function ResourceCard({ resource }: { resource: StackResource }) {
+function ResourceCard({
+  resource,
+  region,
+}: {
+  resource: StackResource;
+  region?: string;
+}) {
   const category = categorize(resource.type);
   const Icon = CATEGORY_ICONS[category];
+  const consoleUrl = resourceConsoleUrl(
+    resource.type,
+    resource.properties?.id,
+    region,
+  );
 
-  return (
-    <div className="group flex items-start gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-foreground/20">
+  const inner = (
+    <>
       <div className="mt-0.5 rounded-md bg-muted p-1.5">
         <Icon size={14} className="text-muted-foreground" />
       </div>
@@ -139,16 +153,42 @@ function ResourceCard({ resource }: { resource: StackResource }) {
           {shortType(resource.type)}
         </p>
       </div>
-    </div>
+      {consoleUrl && (
+        <ExternalLink
+          size={13}
+          className="mt-0.5 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground"
+        />
+      )}
+    </>
   );
+
+  const className =
+    "group flex items-start gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:border-foreground/20";
+
+  if (consoleUrl) {
+    return (
+      <a
+        href={consoleUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+        title="Open in AWS console"
+      >
+        {inner}
+      </a>
+    );
+  }
+  return <div className={className}>{inner}</div>;
 }
 
 function CategorySection({
   category,
   items,
+  region,
 }: {
   category: Category;
   items: StackResource[];
+  region?: string;
 }) {
   const Icon = CATEGORY_ICONS[category];
 
@@ -166,14 +206,20 @@ function CategorySection({
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((resource) => (
-          <ResourceCard key={resource.id} resource={resource} />
+          <ResourceCard key={resource.id} resource={resource} region={region} />
         ))}
       </div>
     </div>
   );
 }
 
-export function ResourceGraph({ resources }: { resources: StackResource[] }) {
+export function ResourceGraph({
+  resources,
+  region,
+}: {
+  resources: StackResource[];
+  region?: string;
+}) {
   const filtered = resources.filter((r) => !isPulumiMeta(r.type));
 
   if (filtered.length === 0) {
@@ -205,6 +251,7 @@ export function ResourceGraph({ resources }: { resources: StackResource[] }) {
           key={category}
           category={category}
           items={grouped.get(category)!}
+          region={region}
         />
       ))}
     </div>

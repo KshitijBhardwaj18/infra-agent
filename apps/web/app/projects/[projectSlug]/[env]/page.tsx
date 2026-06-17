@@ -1,18 +1,27 @@
 "use client";
 
-import { Suspense, useEffect, useState, useCallback } from "react";
+import { Suspense, use, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useProject } from "@/hooks/useProject";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Copy, Check, ExternalLink, X } from "lucide-react";
-import type { HeizenConfig } from "@heizen/shared";
+import type { HeizenConfig, ParsedCompose } from "@heizen/shared";
 import { ConnectGitHub } from "@/components/github/ConnectGitHub";
 import { IndexingProgress } from "@/components/github/IndexingProgress";
 import { IndexingResults } from "@/components/indexing/IndexingResults";
 import { DeployForm } from "@/components/deploy/DeployForm";
 import { DeployingState } from "@/components/deploy/DeployingState";
+import { DestroyDialog } from "@/components/deploy/DestroyDialog";
+import { VmEndpointsCard } from "@/components/deploy/VmEndpointsCard";
+import {
+  ec2InstanceConsoleUrl,
+  lightsailInstanceConsoleUrl,
+} from "@/lib/aws-console";
 import { CostEstimator } from "@/components/deploy/CostEstimator";
 import { ResourceGraph } from "@/components/resources/ResourceGraph";
 import { EnvVarTable } from "@/components/env-vars/EnvVarTable";
+import { LogsPanel } from "@/components/observability/LogsPanel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,15 +37,30 @@ interface Project {
   githubOwner: string | null;
   githubRepo: string | null;
   githubInstallationId: string | null;
+  environments: Environment[];
 }
 
 interface Environment {
   id: string;
   type: string;
+  name: string | null;
+  slug: string | null;
+  tier: "STAGING" | "PRODUCTION" | null;
   status: string;
+  region: string | null;
   heizenConfig: HeizenConfig | null;
+  composeServicesCache: ParsedCompose | null;
   lastDeployedAt: string | null;
   stackOutputs: Record<string, unknown> | null;
+  deployStrategy: "ECS" | "EC2_COMPOSE" | "LIGHTSAIL" | null;
+  ec2InstanceType: string | null;
+}
+
+// Short label for the deploy paradigm. Null infers from env type
+// (PRODUCTION→ECS, STAGING→Lightsail) for envs predating the field.
+function deployStrategyLabel(env: Environment): string {
+  const s = env.deployStrategy ?? (env.type === "PRODUCTION" ? "ECS" : "LIGHTSAIL");
+  return s === "ECS" ? "ECS" : s === "EC2_COMPOSE" ? "EC2" : "Lightsail";
 }
 
 interface EnvVar {
@@ -132,23 +156,103 @@ function EnvironmentPageContent({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const defaultTab = searchParams.get("tab") === "variables" ? "variables" : "overview";
+  const queryClient = useQueryClient();
+  const tabParam = searchParams.get("tab");
+  const defaultTab =
+    tabParam === "variables" || tabParam === "logs" ? tabParam : "overview";
   const errorCode = searchParams.get("error");
   const errorReason = searchParams.get("reason");
   const [errorDismissed, setErrorDismissed] = useState(false);
-  const [projectSlug, setProjectSlug] = useState("");
-  const [envType, setEnvType] = useState<"staging" | "production">("staging");
-  const [project, setProject] = useState<Project | null>(null);
-  const [environment, setEnvironment] = useState<Environment | null>(null);
+
+  const { projectSlug, env: envSlug } = use(params) as {
+    projectSlug: string;
+    env: string;
+  };
+
+  // Project resolved via the shared projects cache — hits same data as
+  // dashboard / projects list. Cast through unknown because the local
+  // Project interface has narrower env types than the hook's.
+  const { project: hookProject, loading: projectLoading } = useProject(projectSlug);
+  const project = hookProject as unknown as Project | null;
+
+  // Environment is a derivation of project + envType. We patch the
+  // cached project (via setQueryData below) when the websocket pushes
+  // status updates, so this derivation stays live.
+  // Resolve by the URL slug (custom envs use a free-form slug like "qa");
+  // fall back to the lowercased type so legacy /staging, /production URLs
+  // still work for rows created before slugs existed.
+  const environment: Environment | null =
+    project?.environments.find(
+      (e) => (e.slug ?? e.type.toLowerCase()) === envSlug.toLowerCase(),
+    ) ?? null;
+  // The tier ("staging"/"production") drives presets/strategy for child
+  // components, independent of the URL slug; the display name is the env's
+  // human label (falling back to the slug).
+  const envType: "staging" | "production" =
+    environment?.tier === "PRODUCTION" || environment?.type === "PRODUCTION"
+      ? "production"
+      : "staging";
+  const envDisplay = environment?.name ?? envSlug;
+
   const [indexing, setIndexing] = useState(false);
   const [indexingError, setIndexingError] = useState<string | null>(null);
   const [showDeployForm, setShowDeployForm] = useState(false);
-  const [resources, setResources] = useState<
-    Array<{ id: string; pulumiUrn: string; type: string; name: string; dependencies: string[] }>
-  >([]);
-  const [missingEnvCount, setMissingEnvCount] = useState(0);
-  const [suggestionCount, setSuggestionCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+
+  // Resources fetched only when env is LIVE — cached per env id.
+  const resourcesQuery = useQuery({
+    queryKey: ["resources", project?.id, environment?.id] as const,
+    queryFn: () =>
+      api<
+        Array<{
+          id: string;
+          pulumiUrn: string;
+          type: string;
+          name: string;
+          dependencies: string[];
+          // The full Pulumi export blob; `.id` is the physical AWS id
+          // (i-…, vpc-…, bucket name, ARN, role name) used for console
+          // deep-links.
+          properties?: { id?: string } | null;
+        }>
+      >(`/api/projects/${project!.id}/environments/${environment!.id}/resources`),
+    enabled: !!project && !!environment && environment.status === "LIVE",
+    staleTime: 60_000,
+  });
+  const resources = resourcesQuery.data ?? [];
+
+  // Env vars per env — cached separately so switching env tabs is
+  // instant and the missing/suggestion counts in the header reflect
+  // the SAME cache the secrets page uses.
+  const envVarsQuery = useQuery({
+    queryKey: ["env-vars", project?.id, environment?.id] as const,
+    queryFn: () =>
+      api<EnvVar[]>(
+        `/api/projects/${project!.id}/environments/${environment!.id}/env-vars`,
+      ),
+    enabled: !!project && !!environment,
+    staleTime: 30_000,
+  });
+  const envVars = envVarsQuery.data ?? [];
+  const missingEnvCount = envVars.filter(
+    (v) => !v.hasValue && !v.isAutoGenerated && !v.dismissed,
+  ).length;
+  const suggestionCount = missingEnvCount;
+
+  // Fetch deployments only when env is FAILED so we can surface the
+  // actual error message and kind (DEPLOY vs DESTROY) on the failed
+  // state page. Skipped on LIVE/DEPLOYING/etc. to keep the page cheap.
+  const failedDeploymentsQuery = useQuery({
+    queryKey: ["deployments-failed", project?.id, environment?.id] as const,
+    queryFn: () =>
+      api<Array<{ id: string; status: string; kind: string; errorMessage: string | null; completedAt: string | null }>>(
+        `/api/projects/${project!.id}/environments/${environment!.id}/deployments`,
+      ),
+    enabled: !!project && !!environment && environment.status === "FAILED",
+    staleTime: 30_000,
+  });
+  const lastFailed = failedDeploymentsQuery.data?.find((d) => d.status === "FAILED");
+
+  const loading = projectLoading;
 
   const indexStreamUrl = project
     ? `/api/projects/${project.id}/github/index/stream`
@@ -158,51 +262,20 @@ function EnvironmentPageContent({
     indexing,
   );
 
-  const load = useCallback(async (slug: string, env: string) => {
-    try {
-      const projects = await api<Array<Project & { environments: Environment[] }>>("/api/projects");
-      const p = projects.find((pr) => pr.slug === slug);
-      if (!p) {
-        setLoading(false);
-        return;
-      }
-
-      setProject(p);
-      const envRecord = p.environments.find(
-        (e) => e.type.toLowerCase() === env.toLowerCase(),
-      );
-      if (envRecord) {
-        setEnvironment(envRecord);
-        if (envRecord.status === "LIVE") {
-          const res = await api<typeof resources>(
-            `/api/projects/${p.id}/environments/${envRecord.id}/resources`,
-          );
-          setResources(res);
-        }
-        const vars = await api<EnvVar[]>(
-          `/api/projects/${p.id}/environments/${envRecord.id}/env-vars`,
-        );
-        setMissingEnvCount(
-          vars.filter((v) => !v.hasValue && !v.isAutoGenerated && !v.dismissed).length,
-        );
-        setSuggestionCount(
-          vars.filter((v) => !v.isAutoGenerated && !v.dismissed && !v.hasValue).length,
-        );
-      }
-      setLoading(false);
-    } catch (err) {
-      console.error("Failed to load environment data", err);
-      setLoading(false);
+  // load() helper kept for callers that want to manually refresh after
+  // a side-effecting action (deploy / index). Uses the React Query
+  // cache directly — no shadow state to keep in sync.
+  const load = (_slug?: string, _env?: string) => {
+    queryClient.invalidateQueries({ queryKey: ["projects"] });
+    if (project && environment) {
+      queryClient.invalidateQueries({
+        queryKey: ["env-vars", project.id, environment.id],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["resources", project.id, environment.id],
+      });
     }
-  }, []);
-
-  useEffect(() => {
-    params.then(({ projectSlug: slug, env }) => {
-      setProjectSlug(slug);
-      setEnvType(env as "staging" | "production");
-      load(slug, env);
-    });
-  }, [params, load]);
+  };
 
   useIndexingComplete((payload) => {
     if (payload.projectId === project?.id) {
@@ -211,17 +284,31 @@ function EnvironmentPageContent({
         setIndexingError(payload.error);
       } else {
         setIndexingError(null);
-        load(projectSlug, envType);
+        load();
       }
     }
   });
 
+  // WebSocket env-status pushes patch the cached projects array so the
+  // derived `environment` automatically picks up the new status, and
+  // the resources query re-enables when status flips to LIVE.
   useEnvironmentStatus((payload) => {
-    if (payload.environmentId === environment?.id) {
-      setEnvironment((e) => (e ? { ...e, status: payload.status } : e));
-      if (payload.status === "LIVE" && project && environment) {
-        load(projectSlug, envType);
-      }
+    if (payload.environmentId !== environment?.id) return;
+    queryClient.setQueryData<Project[]>(["projects"], (prev) => {
+      if (!prev) return prev;
+      return prev.map((p) => ({
+        ...p,
+        environments: p.environments.map((e) =>
+          e.id === payload.environmentId ? { ...e, status: payload.status } : e,
+        ),
+      }));
+    });
+    if (payload.status === "LIVE") {
+      // Resources may have changed — invalidate so the next render
+      // refetches the resource list for the now-live env.
+      queryClient.invalidateQueries({
+        queryKey: ["resources", project?.id, environment.id],
+      });
     }
   });
 
@@ -229,7 +316,7 @@ function EnvironmentPageContent({
     setShowDeployForm(false);
     if (project && environment) {
       router.push(
-        `/projects/${projectSlug}/${envType}/deployments/${deploymentId}`,
+        `/projects/${projectSlug}/${envSlug}/deployments/${deploymentId}`,
       );
     }
   };
@@ -322,7 +409,10 @@ function EnvironmentPageContent({
     );
   }
 
-  if (environment.status === "DEPLOYING") {
+  if (environment.status === "DEPLOYING" || environment.status === "DESTROYING") {
+    // DeployingState reads the most recent active deployment and uses
+    // its `kind` field to switch labels (Deploying vs Destroying), so
+    // we route both env statuses through the same component.
     return (
       <DeployingState
         projectId={project.id}
@@ -333,26 +423,175 @@ function EnvironmentPageContent({
     );
   }
 
+  if (environment.status === "DESTROYED") {
+    return (
+      <div className="mx-auto max-w-md p-6 text-center">
+        <div className="rounded-lg border border-border bg-card p-8">
+          <h2 className="text-base font-medium capitalize">
+            {envDisplay} environment destroyed
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            All AWS resources have been torn down. Project settings,
+            GitHub connection, and env vars are preserved — you can
+            redeploy at any time.
+          </p>
+          <Button
+            size="sm"
+            className="mt-6"
+            onClick={() => setShowDeployForm(true)}
+          >
+            Redeploy {envDisplay}
+          </Button>
+        </div>
+        {showDeployForm && (
+          <DeployForm
+            projectId={project.id}
+            environmentId={environment.id}
+            envType={envType}
+            initialConfig={
+              environment.heizenConfig ??
+              buildDefaultHeizenConfig(projectSlug, envType)
+            }
+            onDeploy={handleDeploy}
+            onClose={() => setShowDeployForm(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (environment.status === "FAILED") {
+    const lastWasDestroy = lastFailed?.kind === "DESTROY";
+    return (
+      <div className="mx-auto max-w-2xl space-y-4 p-6">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-5">
+          <h2 className="text-base font-medium text-destructive">
+            Last {lastWasDestroy ? "destroy" : "deployment"} failed
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {lastWasDestroy
+              ? "Some AWS resources may still be live. Check the console (EC2, ECS, RDS, Lightsail, S3) for orphans before retrying destroy or redeploying."
+              : "Partial resources may have been created. Either fix the root cause and redeploy, or destroy to clean up and start fresh."}
+          </p>
+          {lastFailed?.errorMessage && (
+            <pre className="mt-3 max-h-48 overflow-auto rounded-md border border-border bg-card/50 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all">
+              {lastFailed.errorMessage}
+            </pre>
+          )}
+          <div className="mt-4 flex flex-wrap gap-2">
+            {lastWasDestroy ? (
+              // Destroy was the intent — only offer retry-destroy. Redeploy
+              // on top of a half-torn-down stack is almost always wrong:
+              // the user wanted this gone, and the state is partial.
+              <DestroyDialog
+                projectId={project.id}
+                envId={environment.id}
+                envType={envType}
+                projectName={projectSlug}
+                trigger="button"
+                triggerLabel="Retry destroy"
+                onDestroyStarted={() => void load(projectSlug, envType)}
+              />
+            ) : (
+              <>
+                <Button size="sm" onClick={() => setShowDeployForm(true)}>
+                  Retry deploy
+                </Button>
+                <DestroyDialog
+                  projectId={project.id}
+                  envId={environment.id}
+                  envType={envType}
+                  projectName={projectSlug}
+                  trigger="button"
+                  onDestroyStarted={() => void load(projectSlug, envType)}
+                />
+              </>
+            )}
+          </div>
+        </div>
+        {showDeployForm && (
+          <DeployForm
+            projectId={project.id}
+            environmentId={environment.id}
+            envType={envType}
+            initialConfig={
+              environment.heizenConfig ??
+              buildDefaultHeizenConfig(projectSlug, envType)
+            }
+            onDeploy={handleDeploy}
+            onClose={() => setShowDeployForm(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
   if (environment.status === "LIVE" && environment.heizenConfig) {
     const outputs = environment.stackOutputs as Record<string, string> | null;
     const appUrl = outputs?.albDnsName ? `http://${outputs.albDnsName}` : null;
 
+    // Resolve the deploy paradigm (null → infer from env type for
+    // back-compat) and drive the endpoints card off THAT, not off the
+    // presence of a static IP — EC2 and Lightsail both export one but
+    // need different console links / connect guidance.
+    const strategy =
+      environment.deployStrategy ??
+      (environment.type === "PRODUCTION" ? "ECS" : "LIGHTSAIL");
+    const isVm = strategy === "EC2_COMPOSE" || strategy === "LIGHTSAIL";
+    const vmProvider: "EC2" | "Lightsail" =
+      strategy === "EC2_COMPOSE" ? "EC2" : "Lightsail";
+    const region = environment.region ?? (typeof outputs?.region === "string" ? outputs.region : undefined);
+    const vmPublicIp =
+      typeof outputs?.staticIpAddress === "string" ? outputs.staticIpAddress : null;
+    const vmInstanceName =
+      typeof outputs?.instanceName === "string" ? outputs.instanceName : undefined;
+    const vmInstanceId =
+      typeof outputs?.instanceId === "string" ? outputs.instanceId : undefined;
+    const vmConsoleUrl =
+      strategy === "EC2_COMPOSE"
+        ? ec2InstanceConsoleUrl(vmInstanceId, region)
+        : lightsailInstanceConsoleUrl(vmInstanceName, region);
+
     return (
       <div className="mx-auto max-w-5xl space-y-6 p-6">
-        <div className="flex items-center justify-between rounded-lg border border-border bg-card p-4">
+        <div className="flex items-center justify-between rounded-xl border border-border bg-card p-5 shadow-sm">
           <div className="flex items-center gap-3">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-success" />
-            <span className="text-sm font-medium capitalize">{envType}</span>
-            <span className="text-sm font-medium text-success">Live</span>
-            {environment.lastDeployedAt && (
-              <span className="tabular-nums text-sm text-muted-foreground">
-                · Last deployed {new Date(environment.lastDeployedAt).toLocaleString()}
-              </span>
-            )}
+            <div className="relative flex h-9 w-9 items-center justify-center rounded-full bg-success/10 ring-1 ring-success/30">
+              <span className="absolute h-2 w-2 animate-ping rounded-full bg-success/60" />
+              <span className="relative h-2.5 w-2.5 rounded-full bg-success" />
+            </div>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <span className="text-base font-semibold capitalize">
+                  {envDisplay}
+                </span>
+                <span className="rounded-md bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-success ring-1 ring-success/20">
+                  Live
+                </span>
+                <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ring-1 ring-border">
+                  {deployStrategyLabel(environment)}
+                </span>
+              </div>
+              {environment.lastDeployedAt && (
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  Last deployed{" "}
+                  {new Date(environment.lastDeployedAt).toLocaleString()}
+                </span>
+              )}
+            </div>
           </div>
-          <Button size="sm" onClick={() => setShowDeployForm(true)}>
-            Redeploy
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <Button size="sm" onClick={() => setShowDeployForm(true)}>
+              Redeploy
+            </Button>
+            <DestroyDialog
+              projectId={project.id}
+              envId={environment.id}
+              envType={envType}
+              projectName={projectSlug}
+              onDestroyStarted={() => void load(projectSlug, envType)}
+            />
+          </div>
         </div>
 
         <Tabs defaultValue={defaultTab}>
@@ -366,9 +605,25 @@ function EnvironmentPageContent({
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="logs">Logs</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
+            {isVm ? (
+              vmPublicIp ? (
+                <VmEndpointsCard
+                  publicIp={vmPublicIp}
+                  provider={vmProvider}
+                  instanceName={vmInstanceName}
+                  consoleUrl={vmConsoleUrl}
+                  routing={environment.heizenConfig.routing}
+                />
+              ) : (
+                <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+                  Endpoints not available yet — the box is still coming up.
+                </div>
+              )
+            ) : (
             <div className="grid gap-3 lg:grid-cols-2">
               <div className="rounded-lg border border-border bg-card p-4">
                 <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
@@ -433,17 +688,45 @@ function EnvironmentPageContent({
                 )}
               </div>
             </div>
+            )}
 
+            {/* Always show the provisioned resources — EC2, ECS, and
+                Lightsail all have a stack worth surfacing. */}
             <div>
               <p className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
                 Infrastructure
               </p>
-              <ResourceGraph resources={resources} />
+              <ResourceGraph resources={resources} region={region} />
             </div>
           </TabsContent>
 
-          <TabsContent value="variables">
+          <TabsContent value="variables" className="space-y-3">
+            {environment.type === "STAGING" && (
+              <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs">
+                <p className="font-medium text-warning-foreground">
+                  Env var changes require a full redeploy on staging
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  Saving here only updates the database. The new values
+                  reach the Lightsail VM on the next deploy, which
+                  replaces the instance (~3–5 min downtime). For hot
+                  rolling updates, use a Production environment.
+                </p>
+              </div>
+            )}
             <EnvVarTable projectId={project.id} envId={environment.id} />
+          </TabsContent>
+
+          <TabsContent value="logs">
+            <LogsPanel
+              projectId={project.id}
+              envId={environment.id}
+              services={
+                environment.composeServicesCache?.services.map((s) => s.name) ??
+                []
+              }
+              canOperate={true}
+            />
           </TabsContent>
         </Tabs>
 
@@ -472,6 +755,7 @@ function EnvironmentPageContent({
             <IndexingResults
               config={environment.heizenConfig}
               missingEnvCount={missingEnvCount}
+              compose={environment.composeServicesCache}
             />
             {suggestionCount > 0 && (
               <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5">
@@ -500,7 +784,11 @@ function EnvironmentPageContent({
               Summary
             </p>
             <div className="mt-3">
-              <CostEstimator config={environment.heizenConfig} />
+              <CostEstimator
+                config={environment.heizenConfig}
+                deployStrategy={environment.deployStrategy ?? undefined}
+                ec2InstanceType={environment.ec2InstanceType ?? undefined}
+              />
             </div>
             <Button
               size="sm"

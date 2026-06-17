@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, FolderGit2, Search } from "lucide-react";
@@ -9,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { api, ApiError } from "@/lib/api";
 import { useEnvironmentStatus } from "@/hooks/useWebSocket";
 
@@ -25,28 +27,34 @@ interface Project {
   }>;
 }
 
+const PROJECTS_QUERY_KEY = ["projects"] as const;
+
 export default function ProjectsPage() {
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
 
-  useEffect(() => {
-    api<Project[]>("/api/projects")
-      .then(setProjects)
-      .catch((err: unknown) => {
-        if (err instanceof ApiError && err.status === 401) {
-          router.replace("/login");
-        } else if (err instanceof Error && err.message.includes("No organization")) {
-          router.replace("/onboarding");
-        }
-      })
-      .finally(() => setLoading(false));
-  }, [router]);
+  const { data: projects = [], isLoading: loading } = useQuery({
+    queryKey: PROJECTS_QUERY_KEY,
+    queryFn: () => api<Project[]>("/api/projects"),
+    retry: (failureCount, err) => {
+      if (err instanceof ApiError && err.status === 401) {
+        router.replace("/login");
+        return false;
+      }
+      if (err instanceof Error && err.message.includes("No organization")) {
+        router.replace("/onboarding");
+        return false;
+      }
+      return failureCount < 2;
+    },
+  });
 
+  // WebSocket status events patch the cached query data so any list
+  // showing this query updates live without a refetch.
   useEnvironmentStatus((payload) => {
-    setProjects((prev) =>
-      prev.map((p) => ({
+    queryClient.setQueryData<Project[]>(PROJECTS_QUERY_KEY, (prev) =>
+      prev?.map((p) => ({
         ...p,
         environments: p.environments.map((e) =>
           e.id === payload.environmentId ? { ...e, status: payload.status } : e,
@@ -68,21 +76,23 @@ export default function ProjectsPage() {
 
   return (
     <div className="mx-auto max-w-5xl p-6">
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-base font-semibold">Projects</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {loading
+      <div className="mb-6">
+        <PageHeader
+          title="Projects"
+          subtitle={
+            loading
               ? "Loading projects..."
-              : <span className="tabular-nums">{projects.length} project{projects.length !== 1 ? "s" : ""} in your workspace</span>}
-          </p>
-        </div>
-        <Link href="/projects/new">
-          <Button size="sm">
-            <Plus size={14} className="mr-2" />
-            New project
-          </Button>
-        </Link>
+              : `${projects.length} project${projects.length !== 1 ? "s" : ""} in your workspace`
+          }
+          actions={
+            <Link href="/projects/new">
+              <Button size="sm">
+                <Plus size={14} className="mr-2" />
+                New project
+              </Button>
+            </Link>
+          }
+        />
       </div>
 
       {!loading && projects.length > 0 && (

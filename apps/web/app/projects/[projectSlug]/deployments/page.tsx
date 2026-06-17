@@ -6,12 +6,19 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, History } from "lucide-react";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusDot } from "@/components/ui/status-badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { KindBadge } from "@/components/ui/kind-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
+import { timeAgo, formatDuration } from "@/lib/format";
 
 interface Deployment {
   id: string;
+  /** "DEPLOY" runs ran `pulumi up`. "DESTROY" runs ran `pulumi destroy`.
+   *  Older rows that pre-date the kind column default to DEPLOY at
+   *  the API/Prisma layer. */
+  kind: "DEPLOY" | "DESTROY";
   status: string;
   commitSha: string | null;
   createdAt: string;
@@ -23,27 +30,6 @@ interface Deployment {
 }
 
 type Filter = "all" | "production" | "staging" | "active" | "failed";
-
-function formatDuration(start?: string | null, end?: string | null) {
-  if (!start) return "—";
-  const startMs = new Date(start).getTime();
-  const endMs = end ? new Date(end).getTime() : Date.now();
-  const secs = Math.floor((endMs - startMs) / 1000);
-  if (secs < 60) return `${secs}s`;
-  const mins = Math.floor(secs / 60);
-  const rem = secs % 60;
-  return `${mins}m ${rem}s`;
-}
-
-function timeAgo(date: string) {
-  const diff = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 export default function DeploymentsListPage({
   params,
@@ -79,6 +65,7 @@ export default function DeploymentsListPage({
         const list = await api<
           Array<{
             id: string;
+            kind?: "DEPLOY" | "DESTROY";
             status: string;
             commitSha: string | null;
             createdAt: string;
@@ -89,6 +76,7 @@ export default function DeploymentsListPage({
         for (const d of list) {
           all.push({
             ...d,
+            kind: d.kind ?? "DEPLOY",
             environmentType: env.type,
             envSlug: env.type.toLowerCase(),
             envId: env.id,
@@ -117,10 +105,10 @@ export default function DeploymentsListPage({
   return (
     <div className="mx-auto max-w-5xl p-6">
       <div className="mb-6">
-        <h1 className="text-base font-semibold">Deployments</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          All deployment runs for this project
-        </p>
+        <PageHeader
+          title="Deployments"
+          subtitle="Recent deploys across all environments"
+        />
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -151,8 +139,8 @@ export default function DeploymentsListPage({
       {!loading && filtered.length === 0 && (
         <EmptyState
           icon={History}
-          title="No deployments"
-          description="Deploy an environment to see runs here"
+          title="No runs yet"
+          description="Deploy or tear down an environment to see runs here"
         />
       )}
 
@@ -162,8 +150,8 @@ export default function DeploymentsListPage({
             <thead>
               <tr className="border-b border-border bg-card/50 text-left text-xs text-muted-foreground">
                 <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Type</th>
                 <th className="px-4 py-2 font-medium">Environment</th>
-                <th className="px-4 py-2 font-medium">Trigger</th>
                 <th className="px-4 py-2 font-medium">Commit</th>
                 <th className="px-4 py-2 font-medium">Duration</th>
                 <th className="px-4 py-2 font-medium">Date</th>
@@ -182,10 +170,12 @@ export default function DeploymentsListPage({
                   className="cursor-pointer border-b border-border/50 transition-colors last:border-0 hover:bg-card/50"
                 >
                   <td className="px-4 py-3">
-                    <StatusDot status={d.status} />
+                    <StatusBadge status={d.status} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <KindBadge kind={d.kind} />
                   </td>
                   <td className="px-4 py-3 capitalize text-foreground/90">{d.envSlug}</td>
-                  <td className="px-4 py-3 text-muted-foreground">manual</td>
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                     {d.commitSha?.slice(0, 7) ?? "—"}
                   </td>

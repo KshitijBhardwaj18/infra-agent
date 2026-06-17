@@ -1,0 +1,201 @@
+import * as pulumi from "@pulumi/pulumi"
+import * as cfg from "./config"
+
+// cloud-init runs as root on first boot only. Subsequent reboots run
+// the systemd unit we install at the end (heizen-stack.service) to
+// re-up the compose stack against locally cached images.
+//
+// Idempotency guard: `/home/ubuntu/<project>/.bootstrapped` is touched on success.
+// If user_data is somehow re-invoked (rare), we early-exit.
+//
+// All file content arrives base64-encoded via Pulumi config so we can
+// embed it in a heredoc without worrying about quote escaping. The
+// 16KB user_data limit is real (Lightsail enforces it); the worker
+// short-circuits and refuses to render if the rendered script exceeds
+// 15500 bytes (margin for the systemd unit).
+export const userData = pulumi
+  .all([
+    cfg.composeB64,
+    cfg.caddyfileB64,
+    cfg.envFileB64,
+    cfg.caddyDockerComposeB64,
+    {{#if lokiLogs}}cfg.alloyDockerComposeB64,
+    cfg.alloyConfigB64,
+    {{/if}}cfg.ecrAccessKey ?? pulumi.output(""),
+    cfg.ecrSecretKey ?? pulumi.output(""),
+    cfg.ecrSessionToken ?? pulumi.output(""),
+  ])
+  .apply(
+    ([
+      composeB64,
+      caddyfileB64,
+      envFileB64,
+      caddyDockerComposeB64,
+      {{#if lokiLogs}}alloyDockerComposeB64,
+      alloyConfigB64,
+      {{/if}}ecrAccessKey,
+      ecrSecretKey,
+      ecrSessionToken,
+    ]) => {
+      const ecrRegistry = cfg.ecrRegistry
+      const region = "{{region}}"
+
+      const ecrLoginBlock = ecrRegistry
+        ? `
+# ECR login (only if registry was provided). Creds are short-lived STS
+# tokens; we unset them after login so they don't sit in the environment.
+export AWS_ACCESS_KEY_ID="${ecrAccessKey}"
+export AWS_SECRET_ACCESS_KEY="${ecrSecretKey}"
+export AWS_SESSION_TOKEN="${ecrSessionToken}"
+export AWS_DEFAULT_REGION="${region}"
+if ! command -v aws >/dev/null 2>&1; then
+  apt-get install -y awscli
+fi
+aws ecr get-login-password --region "${region}" \\
+  | docker login --username AWS --password-stdin "${ecrRegistry}"
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_DEFAULT_REGION
+`
+        : "# (No ECR registry configured — skipping docker login.)"
+
+      return `#!/bin/bash
+# Self-reexec under bash. Lightsail's cloud-init prepends its own
+# init lines (SSH CA setup, etc.) to user-data, which pushes our
+# shebang off line 1. Without a valid line-1 shebang, scripts_user
+# runs the whole concat under /bin/sh (dash on Ubuntu), and dash
+# chokes on \`set -o pipefail\` and the \`exec > >(tee ...)\` process
+# substitution below. The guard uses only POSIX syntax so it runs
+# fine under dash, then hands off to bash for the rest.
+if [ -z "\${HEIZEN_BASH_REEXEC:-}" ]; then
+  export HEIZEN_BASH_REEXEC=1
+  exec /bin/bash "\$0" "\$@"
+fi
+
+set -euxo pipefail
+exec > >(tee -a /var/log/heizen-init.log) 2>&1
+
+# Everything the user cares about lives in one folder under the default
+# ubuntu home, named after the project, so it's right there when you SSH
+# in (no cd /opt, no sudo to read files). Files are owned by ubuntu; the
+# systemd unit runs the stack as root but reads them fine.
+APP_DIR=/home/ubuntu/{{project}}
+
+if [ -f "$APP_DIR/.bootstrapped" ]; then
+  echo "[heizen] already bootstrapped — exiting cleanly."
+  exit 0
+fi
+
+echo "[heizen] bootstrapping at $(date -u +%FT%TZ)"
+
+# Wait for apt locks held by Ubuntu's automatic-updates timer. Without
+# this, the first apt-get install races and fails ~25% of the time.
+for i in $(seq 1 60); do
+  if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \\
+     && ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
+    break
+  fi
+  echo "[heizen] waiting for apt locks (attempt $i)..."
+  sleep 5
+done
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y ca-certificates curl gnupg
+
+# Install Docker (official convenience script — simpler than the repo
+# dance and pinned-version-safe for fresh boxes).
+if ! command -v docker >/dev/null 2>&1; then
+  curl -fsSL https://get.docker.com | sh
+fi
+systemctl enable --now docker
+
+# Let the ubuntu user run docker without sudo when they SSH in. The
+# running stack is started by systemd as root regardless; this is purely
+# so \`docker compose ...\` works interactively. Takes effect on next
+# login (or \`newgrp docker\`).
+usermod -aG docker ubuntu
+
+mkdir -p "$APP_DIR"
+
+# Decode all the blobs the platform sent us into files on disk. base64
+# -d expects no surrounding whitespace; we trust Pulumi to produce
+# clean output. All four files live together in $APP_DIR — the Caddyfile
+# is mounted into the caddy container via a relative path in the caddy
+# compose, so it no longer needs to live under /etc/caddy.
+echo "${composeB64}" | base64 -d > "$APP_DIR/docker-compose.yml"
+echo "${caddyDockerComposeB64}" | base64 -d > "$APP_DIR/docker-compose.caddy.yml"
+{{#if lokiLogs}}echo "${alloyDockerComposeB64}" | base64 -d > "$APP_DIR/docker-compose.alloy.yml"
+echo "${alloyConfigB64}" | base64 -d > "$APP_DIR/config.alloy"
+{{/if}}echo "${caddyfileB64}" | base64 -d > "$APP_DIR/Caddyfile"
+echo "${envFileB64}" | base64 -d > "$APP_DIR/.env"
+
+# Hand the whole folder to the ubuntu user so it's readable/editable on
+# SSH without sudo. .env still gets 0600 (owner-only) since it holds
+# secrets — but the owner is now ubuntu, so you can cat it directly.
+chown -R ubuntu:ubuntu "$APP_DIR"
+chmod 600 "$APP_DIR/.env"
+
+# Install the systemd unit BEFORE attempting any pull/up, so that even
+# if image pull fails (private registry without creds, network blip,
+# missing tag), the box ends up in a recoverable state: files on disk,
+# unit installed, ready to retry once auth is fixed via
+# \`sudo systemctl start heizen-stack\`.
+cat > /etc/systemd/system/heizen-stack.service <<'UNIT'
+[Unit]
+Description=Heizen platform stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+WorkingDirectory=/home/ubuntu/{{project}}
+ExecStart=/bin/bash -c 'docker compose -f docker-compose.yml -f docker-compose.caddy.yml {{#if lokiLogs}}-f docker-compose.alloy.yml {{/if}}--env-file .env up -d --remove-orphans'
+ExecStop=/bin/bash -c 'docker compose -f docker-compose.yml -f docker-compose.caddy.yml {{#if lokiLogs}}-f docker-compose.alloy.yml {{/if}}--env-file .env down'
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable heizen-stack.service
+
+${ecrLoginBlock}
+
+# Pull + run. Both calls are wrapped so a failure (e.g. private images
+# the box has no creds for) doesn't abort the rest of the script — the
+# folder, files, and systemd unit must still land so the user can SSH
+# in, fix auth, and \`systemctl start heizen-stack\` without redeploying.
+cd "$APP_DIR"
+set +e
+docker compose \\
+  -f docker-compose.yml \\
+  -f docker-compose.caddy.yml \\
+{{#if lokiLogs}}  -f docker-compose.alloy.yml \\
+{{/if}}  --env-file .env \\
+  pull
+pull_rc=$?
+
+docker compose \\
+  -f docker-compose.yml \\
+  -f docker-compose.caddy.yml \\
+{{#if lokiLogs}}  -f docker-compose.alloy.yml \\
+{{/if}}  --env-file .env \\
+  up -d --remove-orphans
+up_rc=$?
+set -e
+
+if [ "$pull_rc" -ne 0 ] || [ "$up_rc" -ne 0 ]; then
+  echo "[heizen] WARNING: compose pull=$pull_rc up=$up_rc — stack not running."
+  echo "[heizen] Files are at $APP_DIR. Fix registry auth, then:"
+  echo "[heizen]   sudo systemctl start heizen-stack"
+fi
+
+# Touch the marker even on partial failure so cloud-init doesn't keep
+# retrying on subsequent reboots. The recovery path is documented above.
+touch "$APP_DIR/.bootstrapped"
+chown ubuntu:ubuntu "$APP_DIR/.bootstrapped"
+echo "[heizen] bootstrap complete at $(date -u +%FT%TZ)"
+`
+    },
+  )

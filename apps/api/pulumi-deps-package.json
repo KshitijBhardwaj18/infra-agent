@@ -1,0 +1,14 @@
+{
+  "name": "pulumi-deps",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared Pulumi SDK + AWS provider deps. Symlinked into each deploy workdir via PULUMI_BASE_DEPS_DIR to skip re-install per deploy.",
+  "dependencies": {
+    "@pulumi/pulumi": "^3.0.0",
+    "@pulumi/aws": "^7.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

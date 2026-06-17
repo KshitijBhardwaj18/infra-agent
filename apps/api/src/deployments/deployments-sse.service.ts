@@ -5,6 +5,7 @@ import type { DeploymentPhase } from "@heizen/db";
 import type { PrismaClient } from "@heizen/db";
 import { PRISMA } from "../prisma/prisma.module";
 import type { DeploymentLogPayload } from "@heizen/shared";
+import { env } from "../common/env";
 
 @Injectable()
 export class DeploymentsSseService implements OnModuleDestroy {
@@ -13,7 +14,7 @@ export class DeploymentsSseService implements OnModuleDestroy {
   private readonly subscriber: Redis;
 
   constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {
-    const url = process.env.REDIS_URL ?? "redis://localhost:6379";
+    const url = env("REDIS_URL") ?? "redis://localhost:6379";
     this.redis = new Redis(url);
     this.subscriber = new Redis(url);
 

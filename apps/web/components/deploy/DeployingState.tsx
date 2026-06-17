@@ -8,20 +8,16 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
+import { timeAgo } from "@/lib/format";
 import { useDeploymentStatus } from "@/hooks/useWebSocket";
 
 interface Deployment {
   id: string;
   status: string;
+  /** "DEPLOY" or "DESTROY". Older rows without the field default to
+   *  DEPLOY at the api/Prisma layer. */
+  kind?: string;
   createdAt?: string;
-}
-
-function timeAgo(date: string) {
-  const diff = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  return `${Math.floor(mins / 60)}h ago`;
 }
 
 export function DeployingState({
@@ -37,6 +33,7 @@ export function DeployingState({
 }) {
   const [deployId, setDeployId] = useState<string | null>(null);
   const [deployStatus, setDeployStatus] = useState<string>("QUEUED");
+  const [deployKind, setDeployKind] = useState<string>("DEPLOY");
   const [deployCreatedAt, setDeployCreatedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -52,6 +49,7 @@ export function DeployingState({
         if (active) {
           setDeployId(active.id);
           setDeployStatus(active.status);
+          setDeployKind(active.kind ?? "DEPLOY");
           if (active.createdAt) setDeployCreatedAt(active.createdAt);
         }
       })
@@ -64,11 +62,13 @@ export function DeployingState({
     }
   });
 
+  const isDestroy = deployKind === "DESTROY";
+  const verbing = isDestroy ? "Destroying" : "Deploying";
   const phaseLabel =
     deployStatus === "QUEUED"
       ? "Waiting to start..."
       : deployStatus === "DEPLOYING"
-        ? "Deploying infrastructure"
+        ? (isDestroy ? "Tearing down infrastructure" : "Deploying infrastructure")
         : "Preparing";
 
   return (
@@ -77,7 +77,7 @@ export function DeployingState({
         <Loader2 size={24} className="animate-spin text-info" />
       </div>
       <h2 className="mt-4 text-base font-medium capitalize">
-        Deploying to {envType}
+        {verbing} {envType}
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">{phaseLabel}</p>
 
@@ -108,13 +108,15 @@ export function DeployingState({
       ) : (
         !loading && (
           <p className="mt-4 text-sm text-muted-foreground">
-            No active deployment found.
+            No active {isDestroy ? "destroy" : "deployment"} found.
           </p>
         )
       )}
 
       <p className="mt-4 text-xs text-muted-foreground">
-        Infrastructure provisioning takes 15–20 minutes on first deploy.
+        {isDestroy
+          ? "Tearing down infrastructure takes 5–10 minutes. RDS deletion is the slow step."
+          : "Infrastructure provisioning takes 15–20 minutes on first deploy."}
       </p>
     </div>
   );

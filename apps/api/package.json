@@ -32,6 +32,9 @@
     "class-transformer": "^0.5.1",
     "ai": "^4.0.0",
     "@ai-sdk/anthropic": "^1.0.0",
+    "@aws-sdk/client-cloudwatch": "^3.693.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.693.0",
+    "@aws-sdk/client-ecr": "^3.693.0",
     "@aws-sdk/client-s3": "^3.693.0",
     "zod": "^3.23.8"
   },

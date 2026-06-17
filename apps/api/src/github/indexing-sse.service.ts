@@ -2,6 +2,7 @@ import { Injectable, OnModuleDestroy } from "@nestjs/common";
 import { Subject, type Observable } from "rxjs";
 import Redis from "ioredis";
 import type { IndexingSsePayload } from "@heizen/shared";
+import { env } from "../common/env";
 
 @Injectable()
 export class IndexingSseService implements OnModuleDestroy {
@@ -10,7 +11,7 @@ export class IndexingSseService implements OnModuleDestroy {
   private readonly subscriber: Redis;
 
   constructor() {
-    const url = process.env.REDIS_URL ?? "redis://localhost:6379";
+    const url = env("REDIS_URL") ?? "redis://localhost:6379";
     this.redis = new Redis(url);
     this.subscriber = new Redis(url);
 

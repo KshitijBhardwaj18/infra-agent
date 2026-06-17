@@ -6,6 +6,7 @@ import { shallowClone } from "./clone";
 import { collectFiles } from "./collect";
 import { buildConfigFromStatic } from "./config-builder";
 import { staticAnalysis } from "./static";
+import { findAndParseCompose } from "./compose";
 
 export type IndexingStepCallback = (step: string, data?: unknown) => void;
 
@@ -35,9 +36,20 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzerResult> 
     onStep?.("detecting");
     const staticResult = staticAnalysis(files);
 
+    // docker-compose parsing is opportunistic. A failure shouldn't kill
+    // the entire indexing run — surface in the SSE stream and continue
+    // with config-only output. Repos without a compose file return null.
+    let compose: AnalyzerResult["compose"] = null;
+    try {
+      compose = await findAndParseCompose(cloneDir);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onStep?.("compose_error", { message });
+    }
+
     onStep?.("analyzing");
     const config = buildConfigFromStatic(staticResult, projectName, env);
-    const result = { config };
+    const result: AnalyzerResult = { config, compose: compose ?? null };
 
     onStep?.("complete", result);
     return result;

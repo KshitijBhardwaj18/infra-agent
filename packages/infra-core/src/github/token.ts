@@ -58,6 +58,54 @@ export async function getInstallationToken(
   return installationAuth.token;
 }
 
+export interface GithubInstallationMeta {
+  id: number;
+  account: { login: string; type: "User" | "Organization" } | null;
+}
+
+/**
+ * Fetches metadata for a GitHub App installation using an app-level JWT.
+ * Returns id and account (login + type) for the installation.
+ */
+export async function getInstallationMeta(
+  installationId: string,
+): Promise<GithubInstallationMeta> {
+  const appId = process.env.GITHUB_APP_ID;
+  const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+
+  if (!appId || !privateKey) {
+    throw new Error("GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY must be set");
+  }
+
+  const auth = createAppAuth({
+    appId,
+    privateKey: privateKey.replace(/\\n/g, "\n"),
+  });
+
+  const appAuth = await auth({ type: "app" });
+
+  const res = await fetch(
+    `https://api.github.com/app/installations/${installationId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${appAuth.token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    },
+  );
+
+  if (!res.ok) {
+    const err = new Error(
+      `Failed to fetch installation ${installationId}: HTTP ${res.status}`,
+    ) as Error & { status: number };
+    err.status = res.status;
+    throw err;
+  }
+
+  return (await res.json()) as GithubInstallationMeta;
+}
+
 /**
  * Returns the GitHub settings URL for an existing app installation so users
  * can manage repository access without creating a duplicate install.

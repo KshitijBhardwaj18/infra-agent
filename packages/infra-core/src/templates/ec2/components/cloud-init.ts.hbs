@@ -1,0 +1,102 @@
+import { artifactsBucket } from "./artifacts"
+
+// First-boot bootstrap for the EC2 box. Unlike Lightsail, the app files
+// are NOT baked into user_data — the box pulls the compose/.env/Caddyfile
+// bundle from S3 using its IAM instance role. No 16 KB limit, and
+// in-place updates are just another `aws s3 sync` (triggered via SSM).
+export const userData = artifactsBucket.bucket.apply(
+  (bucketName) => `#!/bin/bash
+# Self-reexec under bash — EC2 cloud-init may invoke the script under
+# /bin/sh (dash), which chokes on \`set -o pipefail\` + process subst.
+if [ -z "\${HEIZEN_BASH_REEXEC:-}" ]; then
+  export HEIZEN_BASH_REEXEC=1
+  exec /bin/bash "\$0" "\$@"
+fi
+
+set -euxo pipefail
+exec > >(tee -a /var/log/heizen-init.log) 2>&1
+
+APP_DIR=/home/ubuntu/{{project}}
+REGION={{region}}
+ARTIFACTS_BUCKET=${bucketName}
+
+if [ -f "$APP_DIR/.bootstrapped" ]; then
+  echo "[heizen] already bootstrapped — exiting cleanly."
+  exit 0
+fi
+
+echo "[heizen] bootstrapping at \$(date -u +%FT%TZ)"
+
+# Wait for apt locks (cloud images run unattended-upgrades on first boot).
+for i in \$(seq 1 60); do
+  if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \\
+     && ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
+    break
+  fi
+  echo "[heizen] waiting for apt locks (attempt \$i)..."
+  sleep 5
+done
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y ca-certificates curl gnupg awscli
+
+if ! command -v docker >/dev/null 2>&1; then
+  curl -fsSL https://get.docker.com | sh
+fi
+systemctl enable --now docker
+usermod -aG docker ubuntu
+
+mkdir -p "$APP_DIR"
+
+# Pull the app bundle from S3 — auth via the instance role, no creds.
+aws s3 sync "s3://$ARTIFACTS_BUCKET/current/" "$APP_DIR/" --region "$REGION"
+chown -R ubuntu:ubuntu "$APP_DIR"
+[ -f "$APP_DIR/.env" ] && chmod 600 "$APP_DIR/.env"
+
+# Native ECR login via the instance role (auto-rotating, no STS creds on
+# the box). Targets this account's ECR registry in this region.
+ACCOUNT_ID=\$(aws sts get-caller-identity --query Account --output text)
+aws ecr get-login-password --region "$REGION" \\
+  | docker login --username AWS --password-stdin "\${ACCOUNT_ID}.dkr.ecr.\${REGION}.amazonaws.com" || true
+
+# systemd unit so the stack survives reboots.
+cat > /etc/systemd/system/heizen-stack.service <<UNIT
+[Unit]
+Description=Heizen platform stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+WorkingDirectory=$APP_DIR
+ExecStart=/bin/bash -c 'docker compose -f docker-compose.yml -f docker-compose.caddy.yml {{#if lokiLogs}}-f docker-compose.alloy.yml {{/if}}--env-file .env up -d --remove-orphans'
+ExecStop=/bin/bash -c 'docker compose -f docker-compose.yml -f docker-compose.caddy.yml {{#if lokiLogs}}-f docker-compose.alloy.yml {{/if}}--env-file .env down'
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable heizen-stack.service
+
+# Pull + run (resilient — a failure leaves files + unit in place so the
+# stack can be brought up manually or via the next SSM sync).
+cd "$APP_DIR"
+set +e
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml {{#if lokiLogs}}-f docker-compose.alloy.yml {{/if}}--env-file .env pull
+pull_rc=\$?
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml {{#if lokiLogs}}-f docker-compose.alloy.yml {{/if}}--env-file .env up -d --remove-orphans
+up_rc=\$?
+set -e
+if [ "\$pull_rc" -ne 0 ] || [ "\$up_rc" -ne 0 ]; then
+  echo "[heizen] WARNING: compose pull=\$pull_rc up=\$up_rc — stack not fully running; check the logs."
+fi
+
+touch "$APP_DIR/.bootstrapped"
+chown ubuntu:ubuntu "$APP_DIR/.bootstrapped"
+echo "[heizen] bootstrap complete at \$(date -u +%FT%TZ)"
+`,
+)

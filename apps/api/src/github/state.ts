@@ -1,14 +1,21 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { BadRequestException } from "@nestjs/common";
+import { env } from "../common/env";
 
-export interface GithubStatePayload {
-  projectId: string;
-  returnEnv: "staging" | "production";
-  userId: string;
-}
+export type GithubStatePayload =
+  | {
+      kind: "project";
+      projectId: string;
+      returnEnv: "staging" | "production";
+      userId: string;
+    }
+  | {
+      kind: "admin-connection";
+      userId: string;
+    };
 
 function getSecret(): string {
-  const s = process.env.GITHUB_STATE_SECRET;
+  const s = env("GITHUB_STATE_SECRET");
   if (!s) throw new Error("GITHUB_STATE_SECRET env var is required");
   return s;
 }

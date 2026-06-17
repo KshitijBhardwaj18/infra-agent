@@ -11,6 +11,7 @@ import type { Queue } from "bullmq";
 import type { PrismaClient } from "@heizen/db";
 import { PRISMA } from "../prisma/prisma.module";
 import { EnvironmentsService } from "../environments/environments.service";
+import { AuditLogService } from "../audit/audit.service";
 
 @Injectable()
 export class DeploymentsService {
@@ -18,6 +19,7 @@ export class DeploymentsService {
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     private readonly environments: EnvironmentsService,
     @InjectQueue("deployment") private readonly deploymentQueue: Queue,
+    private readonly audit: AuditLogService,
   ) {}
 
   async create(
@@ -34,7 +36,12 @@ export class DeploymentsService {
     if (!env.awsRoleArn || !env.region) {
       throw new BadRequestException("AWS configuration required before deploying");
     }
-    if (!env.imageUri) {
+    // Only the ECS path bakes the image into a task definition. EC2 and
+    // Lightsail read image refs from docker-compose.yml, so imageUri is
+    // not required there. Resolve strategy the same way the worker does.
+    const strategy =
+      env.deployStrategy ?? (env.type === "PRODUCTION" ? "ECS" : "LIGHTSAIL");
+    if (strategy === "ECS" && !env.imageUri) {
       throw new BadRequestException("Docker image URI not configured");
     }
 
@@ -67,18 +74,30 @@ export class DeploymentsService {
       );
     }
 
-    const deployment = await this.prisma.deployment.create({
-      data: {
-        environmentId: envId,
-        triggeredBy,
-        commitSha,
-        status: "QUEUED",
-      },
-    });
+    const deployment = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.deployment.create({
+        data: {
+          environmentId: envId,
+          triggeredBy,
+          commitSha,
+          status: "QUEUED",
+        },
+      });
 
-    await this.prisma.environment.update({
-      where: { id: envId },
-      data: { status: "DEPLOYING" },
+      await tx.environment.update({
+        where: { id: envId },
+        data: { status: "DEPLOYING" },
+      });
+
+      await this.audit.logInTx(tx, {
+        actorId: triggeredBy,
+        action: "DEPLOY_TRIGGERED",
+        resourceType: "ENVIRONMENT",
+        resourceId: envId,
+        metadata: { deploymentId: created.id, projectId, env: env.type },
+      });
+
+      return created;
     });
 
     try {
@@ -111,6 +130,163 @@ export class DeploymentsService {
       });
       throw new ServiceUnavailableException(
         "Could not enqueue deployment — the job queue may be unavailable",
+      );
+    }
+
+    return deployment;
+  }
+
+  /**
+   * Roll back to the previous good commit: redeploy the most recent
+   * successful deployment whose commit differs from what's currently
+   * running. Reuses create() so all the usual guards (indexed, AWS
+   * configured, no in-flight job, env vars set) still apply.
+   */
+  async rollback(
+    orgId: string,
+    projectId: string,
+    envId: string,
+    triggeredBy: string,
+  ) {
+    await this.environments.get(orgId, projectId, envId);
+
+    const successes = await this.prisma.deployment.findMany({
+      where: {
+        environmentId: envId,
+        kind: "DEPLOY",
+        status: "SUCCESS",
+        commitSha: { not: null },
+      },
+      orderBy: { completedAt: "desc" },
+      take: 10,
+      select: { commitSha: true },
+    });
+
+    // The most recent successful deploy is what's live: an in-flight or
+    // failed deploy doesn't replace the running version, so it's the right
+    // "current" to roll back away from.
+    const currentSha = successes[0]?.commitSha ?? null;
+    const target = successes.find(
+      (d) => d.commitSha && d.commitSha !== currentSha,
+    );
+    if (!target?.commitSha) {
+      if (successes.length === 0) {
+        throw new BadRequestException(
+          "No successful deployments yet — nothing to roll back to.",
+        );
+      }
+      throw new BadRequestException(
+        "No earlier successful deployment on a different commit to roll back to.",
+      );
+    }
+
+    return this.create(orgId, projectId, envId, triggeredBy, target.commitSha);
+  }
+
+  async destroy(
+    orgId: string,
+    projectId: string,
+    envId: string,
+    triggeredBy: string,
+  ) {
+    const env = await this.environments.get(orgId, projectId, envId);
+
+    // Nothing to tear down — env was never deployed or is already a
+    // tombstone. Refusing here keeps the audit log clean and avoids a
+    // queued job that would immediately fail.
+    if (env.status === "NOT_DEPLOYED" || env.status === "DESTROYED") {
+      throw new BadRequestException(
+        `Environment is ${env.status.toLowerCase()} — nothing to destroy.`,
+      );
+    }
+    if (!env.heizenConfig) {
+      throw new BadRequestException(
+        "Environment has no rendered config — was it ever deployed?",
+      );
+    }
+    if (!env.awsRoleArn || !env.region) {
+      throw new BadRequestException(
+        "AWS configuration missing — can't reach the stack to destroy it.",
+      );
+    }
+    if (!env.pulumiBackendBucket || !env.pulumiStackName) {
+      throw new BadRequestException(
+        "Stack metadata missing — env was never deployed, nothing to destroy.",
+      );
+    }
+
+    // Same in-flight check as create(): one Pulumi operation at a time
+    // per environment. A second destroy clashes; a deploy mid-destroy
+    // is even worse.
+    const inFlight = await this.prisma.deployment.findFirst({
+      where: {
+        environmentId: envId,
+        status: { in: ["QUEUED", "DEPLOYING"] },
+      },
+      select: { id: true, status: true, kind: true },
+    });
+    if (inFlight) {
+      throw new ConflictException(
+        `Another ${inFlight.kind.toLowerCase()} (${inFlight.id}) is already ${inFlight.status.toLowerCase()}. Wait for it to complete or cancel it.`,
+      );
+    }
+
+    const deployment = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.deployment.create({
+        data: {
+          environmentId: envId,
+          triggeredBy,
+          kind: "DESTROY",
+          status: "QUEUED",
+        },
+      });
+
+      await tx.environment.update({
+        where: { id: envId },
+        data: { status: "DESTROYING" },
+      });
+
+      await this.audit.logInTx(tx, {
+        actorId: triggeredBy,
+        action: "DESTROY_TRIGGERED",
+        resourceType: "ENVIRONMENT",
+        resourceId: envId,
+        metadata: { deploymentId: created.id, projectId, env: env.type },
+      });
+
+      return created;
+    });
+
+    try {
+      await this.deploymentQueue.add(
+        "deploy",
+        {
+          deploymentId: deployment.id,
+          environmentId: envId,
+          projectId,
+        },
+        {
+          jobId: deployment.id,
+          attempts: 1,
+          removeOnComplete: 50,
+          removeOnFail: 100,
+        },
+      );
+    } catch (queueErr) {
+      await this.prisma.deployment.update({
+        where: { id: deployment.id },
+        data: {
+          status: "FAILED",
+          errorMessage: `Failed to enqueue: ${queueErr instanceof Error ? queueErr.message : "unknown"}`,
+          completedAt: new Date(),
+        },
+      });
+      await this.prisma.environment.update({
+        where: { id: envId },
+        data: { status: env.status as "LIVE" | "FAILED" | "NOT_DEPLOYED" },
+      });
+      throw new ServiceUnavailableException(
+        "Could not enqueue destroy — the job queue may be unavailable",
       );
     }
 

@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useProject } from "@/hooks/useProject";
 import Link from "next/link";
-import { Trash2, Copy, Check } from "lucide-react";
+import { Trash2, Copy, Check, ExternalLink, AlertTriangle } from "lucide-react";
 import { GitHubIcon } from "@/components/icons/GitHubIcon";
-import { api, apiUrl } from "@/lib/api";
+import { BranchSelect } from "@/components/github/BranchSelect";
+import { ObservabilitySources } from "@/components/observability/ObservabilitySources";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Label } from "@/components/ui/label";
+import { AWS_REGIONS } from "@heizen/shared";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -40,25 +46,43 @@ interface Project {
   }>;
 }
 
+interface AwsSetupInfo {
+  heizenAccountId: string;
+  externalId: string;
+  region: string;
+  templateUrl: string;
+  launchUrl: string;
+  localhostTemplate: boolean;
+}
+
 export default function ProjectSettingsPage({
   params,
 }: {
   params: Promise<{ projectSlug: string }>;
 }) {
   const router = useRouter();
-  const [project, setProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { projectSlug } = use(params);
+  const { project, loading, invalidate: invalidateProjects } = useProject(projectSlug);
+
   const [name, setName] = useState("");
   const [branch, setBranch] = useState("main");
-  const [awsAccountId, setAwsAccountId] = useState("");
   const [awsRoleArn, setAwsRoleArn] = useState("");
   const [region, setRegion] = useState("us-east-1");
   const [verifyResult, setVerifyResult] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [copiedEnvId, setCopiedEnvId] = useState(false);
+  const [awsSetup, setAwsSetup] = useState<AwsSetupInfo | null>(null);
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
 
   const productionEnv = project?.environments.find((e) => e.type === "PRODUCTION");
+
+  // Account ID is derived from the role ARN (backend stores the same value).
+  const derivedAccountId =
+    /^arn:aws:iam::(\d{12}):role\//.exec(awsRoleArn.trim())?.[1] ?? null;
+  // A non-empty ARN that doesn't parse means it's mistyped.
+  const arnInvalid = awsRoleArn.trim().length > 0 && !derivedAccountId;
 
   const copyEnvironmentId = async () => {
     if (!productionEnv) return;
@@ -67,24 +91,19 @@ export default function ProjectSettingsPage({
     setTimeout(() => setCopiedEnvId(false), 2000);
   };
 
+  // Seed form fields from the cached project when it arrives. Effect
+  // re-runs if the user navigates between projects without unmounting
+  // (rare on this page but keeps the contract clean).
   useEffect(() => {
-    params.then(async ({ projectSlug }) => {
-      const projects = await api<Project[]>("/api/projects");
-      const p = projects.find((pr) => pr.slug === projectSlug);
-      if (p) {
-        setProject(p);
-        setName(p.name);
-        setBranch(p.githubBranch ?? "main");
-        const prod = p.environments.find((e) => e.type === "PRODUCTION");
-        if (prod) {
-          setAwsAccountId(prod.awsAccountId ?? "");
-          setAwsRoleArn(prod.awsRoleArn ?? "");
-          setRegion(prod.region ?? "us-east-1");
-        }
-      }
-      setLoading(false);
-    });
-  }, [params]);
+    if (!project) return;
+    setName(project.name);
+    setBranch(project.githubBranch ?? "main");
+    const prod = project.environments.find((e) => e.type === "PRODUCTION");
+    if (prod) {
+      setAwsRoleArn(prod.awsRoleArn ?? "");
+      setRegion(prod.region ?? "us-east-1");
+    }
+  }, [project]);
 
   const saveGeneral = async () => {
     if (!project) return;
@@ -93,9 +112,11 @@ export default function ProjectSettingsPage({
     try {
       await api(`/api/projects/${project.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, githubBranch: branch }),
       });
-      setProject({ ...project, name });
+      // Invalidate the shared projects cache so dashboard / list /
+      // detail / env pages pick up the rename + branch change.
+      invalidateProjects();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -112,7 +133,7 @@ export default function ProjectSettingsPage({
     try {
       await api(`/api/projects/${project.id}/environments/${prod.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ awsAccountId, awsRoleArn, region }),
+        body: JSON.stringify({ awsRoleArn, region }),
       });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save AWS config");
@@ -144,6 +165,32 @@ export default function ProjectSettingsPage({
     }
   };
 
+  // One-click setup: ask the API for the platform account id + a pre-built
+  // CloudFormation quick-create URL, then open the AWS console. We only open
+  // the console when the template URL is publicly reachable — on localhost
+  // the AWS console can't fetch it, so we surface the fetched info + a hint
+  // instead of opening a link that would fail.
+  const launchCloudFormation = async () => {
+    if (!project || !productionEnv) return;
+    setSetupLoading(true);
+    setSetupError(null);
+    try {
+      const info = await api<AwsSetupInfo>(
+        `/api/projects/${project.id}/environments/${productionEnv.id}/aws-setup/info`,
+      );
+      setAwsSetup(info);
+      if (!info.localhostTemplate) {
+        window.open(info.launchUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (err) {
+      setSetupError(
+        err instanceof Error ? err.message : "Couldn't prepare CloudFormation setup",
+      );
+    } finally {
+      setSetupLoading(false);
+    }
+  };
+
   const deleteProject = async () => {
     if (!project) return;
     await api(`/api/projects/${project.id}`, { method: "DELETE" });
@@ -152,8 +199,9 @@ export default function ProjectSettingsPage({
 
   const connectGithub = () => {
     if (!project) return;
-    // No cookies — signed state is passed as a server-side token via the install URL.
-    window.location.href = `${apiUrl("/api/github/install")}?projectId=${project.id}&return_env=staging`;
+    // Repo selection lives on the env page, which renders the org-wide picker.
+    // Members can use it without any admin-only install dance.
+    router.push(`/projects/${project.slug}/staging`);
   };
 
   if (loading) {
@@ -172,10 +220,10 @@ export default function ProjectSettingsPage({
   return (
     <div className="mx-auto max-w-5xl p-6">
       <div className="mb-6">
-        <h1 className="text-base font-semibold">Project settings</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Manage configuration for {project.name}
-        </p>
+        <PageHeader
+          title="Settings"
+          subtitle="Project configuration"
+        />
       </div>
 
       <Tabs defaultValue="general">
@@ -183,6 +231,7 @@ export default function ProjectSettingsPage({
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="github">GitHub</TabsTrigger>
           <TabsTrigger value="aws">AWS</TabsTrigger>
+          <TabsTrigger value="observability">Observability</TabsTrigger>
           <TabsTrigger value="danger">Danger Zone</TabsTrigger>
         </TabsList>
 
@@ -216,14 +265,18 @@ export default function ProjectSettingsPage({
                     {project.githubOwner}/{project.githubRepo}
                   </span>
                 </p>
-                <div className="space-y-1.5">
-                  <Label htmlFor="branch">Default branch</Label>
-                  <Input
-                    id="branch"
-                    value={branch}
-                    onChange={(e) => setBranch(e.target.value)}
-                  />
-                </div>
+                <BranchSelect
+                  installationId={project.githubInstallationId}
+                  owner={project.githubOwner}
+                  repo={project.githubRepo}
+                  value={branch}
+                  onChange={setBranch}
+                  fallback={branch || "main"}
+                  label="Default branch"
+                />
+                <Button size="sm" variant="outline" onClick={saveGeneral} disabled={saving}>
+                  Save branch
+                </Button>
                 <Button size="sm" variant="outline" onClick={connectGithub}>
                   <GitHubIcon size={14} className="mr-2" />
                   Reconnect repository
@@ -242,6 +295,50 @@ export default function ProjectSettingsPage({
         </TabsContent>
 
         <TabsContent value="aws" className="space-y-4">
+          {productionEnv && (
+            <div className="rounded-lg border border-border bg-card p-5 max-w-lg">
+              <h3 className="text-sm font-medium">One-click role setup</h3>
+              <p className="mt-1 mb-4 text-xs text-muted-foreground">
+                Create the IAM deploy role in your AWS account with CloudFormation,
+                then paste the generated Role ARN below and verify. No manual IAM
+                policy editing.
+              </p>
+              <Button size="sm" onClick={launchCloudFormation} disabled={setupLoading}>
+                <ExternalLink size={14} className="mr-2" />
+                {setupLoading ? "Preparing…" : "Launch AWS CloudFormation"}
+              </Button>
+
+              {awsSetup && (
+                <dl className="mt-4 space-y-2 text-xs">
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-muted-foreground">Heizen account ID</dt>
+                    <dd className="font-mono">{awsSetup.heizenAccountId}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-muted-foreground">External ID</dt>
+                    <dd className="font-mono">{awsSetup.externalId}</dd>
+                  </div>
+                </dl>
+              )}
+
+              {awsSetup?.localhostTemplate && (
+                <div className="mt-3 flex gap-2 rounded-md border border-warning/30 bg-warning/5 p-3">
+                  <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warning-foreground" />
+                  <p className="text-xs text-muted-foreground">
+                    Your API is on localhost, which the AWS console can&apos;t reach to
+                    load the template. Deploy the API to a public URL (set{" "}
+                    <span className="font-mono">API_PUBLIC_URL</span>) before using
+                    one-click setup, or create the role manually below.
+                  </p>
+                </div>
+              )}
+
+              {setupError && (
+                <p className="mt-3 text-sm text-destructive">{setupError}</p>
+              )}
+            </div>
+          )}
+
           <div className="rounded-lg border border-border bg-card p-5 max-w-lg">
             <p className="mb-4 text-xs text-muted-foreground">
               Production environment AWS credentials
@@ -273,16 +370,54 @@ export default function ProjectSettingsPage({
                 </div>
               )}
               <div className="space-y-1.5">
-                <Label>AWS Account ID</Label>
-                <Input value={awsAccountId} onChange={(e) => setAwsAccountId(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
                 <Label>IAM Role ARN</Label>
-                <Input value={awsRoleArn} onChange={(e) => setAwsRoleArn(e.target.value)} />
+                <Input
+                  value={awsRoleArn}
+                  onChange={(e) => setAwsRoleArn(e.target.value)}
+                  placeholder="arn:aws:iam::123456789012:role/heizen-deploy"
+                  className="font-mono text-xs"
+                />
+                <p
+                  className={`text-xs ${
+                    arnInvalid ? "text-destructive" : "text-muted-foreground"
+                  }`}
+                >
+                  {derivedAccountId ? (
+                    <>
+                      AWS account{" "}
+                      <code className="font-mono text-foreground">
+                        {derivedAccountId}
+                      </code>{" "}
+                      — detected from the role ARN.
+                    </>
+                  ) : arnInvalid ? (
+                    "That doesn't look like a role ARN — expected arn:aws:iam::<account>:role/<name>."
+                  ) : (
+                    "The account ID is read automatically from this ARN."
+                  )}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>Region</Label>
-                <Input value={region} onChange={(e) => setRegion(e.target.value)} />
+                <NativeSelect
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value)}
+                >
+                  {AWS_REGIONS.map((r) => (
+                    <option key={r.code} value={r.code}>
+                      {r.code} — {r.label}
+                    </option>
+                  ))}
+                  {region && !AWS_REGIONS.some((r) => r.code === region) && (
+                    <option value={region}>{region} (unsupported)</option>
+                  )}
+                </NativeSelect>
+                {region && !AWS_REGIONS.some((r) => r.code === region) && (
+                  <p className="text-xs text-destructive">
+                    {region} isn&apos;t a supported region — pick one from the
+                    list before saving.
+                  </p>
+                )}
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={saveAws} disabled={saving}>
@@ -296,6 +431,22 @@ export default function ProjectSettingsPage({
               {saveError && <p className="text-sm text-destructive">{saveError}</p>}
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="observability" className="space-y-4">
+          {productionEnv ? (
+            <ObservabilitySources
+              projectId={project.id}
+              envId={productionEnv.id}
+            />
+          ) : (
+            <div className="rounded-lg border border-border bg-card p-5 max-w-lg">
+              <p className="text-xs text-muted-foreground">
+                No production environment yet — connect sources after the first
+                deploy.
+              </p>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="danger">

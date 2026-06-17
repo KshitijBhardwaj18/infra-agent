@@ -11,3 +11,7 @@ export const dbPassword = cfg.requireSecret("dbPassword")
 {{#each configExports}}
 {{#if (ne configVar "dbPassword")}}export const {{configVar}} = cfg.requireSecret("{{configVar}}")
 {{/if}}{{/each}}
+{{#if lokiLogs}}// Loki shipping (FireLens) — present only when logs destination is grafana-loki
+export const lokiToken   = cfg.requireSecret("lokiToken")
+export const lokiPushUrl = cfg.requireSecret("lokiPushUrl")
+{{/if}}

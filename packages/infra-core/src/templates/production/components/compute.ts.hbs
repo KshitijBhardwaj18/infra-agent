@@ -100,21 +100,33 @@ const {{camel name}}TaskDef = new aws.ecs.TaskDefinition(`${prefix}-{{name}}-tas
   requiresCompatibilities: ["FARGATE"],
   executionRoleArn:        executionRole.arn,
   taskRoleArn:             taskRole.arn,
-  containerDefinitions: pulumi.all([{{camel name}}Env, logGroup.name]).apply(([env, lgName]) =>
+  containerDefinitions: pulumi.all([{{camel name}}Env, logGroup.name{{#if ../lokiLogs}}, cfg.lokiToken, cfg.lokiPushUrl{{/if}}]).apply(([env, lgName{{#if ../lokiLogs}}, lokiToken, lokiPushUrl{{/if}}]) =>
     JSON.stringify([{
       name:    "app",
       image:   "{{../fullImage}}",
       command: {{{json command}}},
       {{#if port}}portMappings: [{ containerPort: {{port}}, protocol: "tcp" }],{{/if}}
       environment: env,
-      logConfiguration: {
+      {{#if ../lokiLogs}}logConfiguration: {
+        logDriver: "awsfirelens",
+        options: {
+          Name:         "loki",
+          host:         new URL(lokiPushUrl).hostname,
+          uri:          "/loki/api/v1/push",
+          port:         "443",
+          tls:          "on",
+          line_format:  "json",
+          labels:       "heizen_env={{../envId}}",
+          bearer_token: lokiToken,
+        },
+      },{{else}}logConfiguration: {
         logDriver: "awslogs",
         options: {
           "awslogs-group":         lgName,
           "awslogs-region":        "{{../region}}",
           "awslogs-stream-prefix": "{{name}}",
         },
-      },
+      },{{/if}}
       {{#if healthCheck}}healthCheck: {
         command:     ["CMD-SHELL", "wget -qO- http://localhost:{{port}}{{healthCheck.path}} || exit 1"],
         interval:    30,
@@ -123,7 +135,21 @@ const {{camel name}}TaskDef = new aws.ecs.TaskDefinition(`${prefix}-{{name}}-tas
         startPeriod: 60,
       },{{/if}}
       essential: true,
-    }])
+    }{{#if ../lokiLogs}},
+    {
+      name:    "log-router",
+      image:   "amazon/aws-for-fluent-bit:stable",
+      essential: false,
+      firelensConfiguration: { type: "fluentbit" },
+      logConfiguration: {
+        logDriver: "awslogs",
+        options: {
+          "awslogs-group":         lgName,
+          "awslogs-region":        "{{../region}}",
+          "awslogs-stream-prefix": "fluent-bit",
+        },
+      },
+    }{{/if}}])
   ),
   tags: { Name: `${prefix}-{{name}}-task` },
 })
@@ -145,7 +171,10 @@ export const {{camel name}}Service = new aws.ecs.Service(`${prefix}-{{name}}`, {
   }],
   {{/if}}{{/if}}deploymentCircuitBreaker: { enable: true, rollback: true },
   enableExecuteCommand: true,
-  forceNewDeployment:   true,
+  // ECS automatically triggers a new rolling deployment when the task
+  // definition ARN changes (which happens on every env var or image
+  // tag update). forceNewDeployment: true forced a redeploy on every
+  // `pulumi up` regardless, which caused unnecessary container churn.
   tags: { Name: `${prefix}-{{name}}` },
 }{{#if ../hasAlb}}{{#if targetGroupVar}}, {
   dependsOn: [httpListener],

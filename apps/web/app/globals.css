@@ -4,6 +4,19 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+  Design tokens — Phase 1 of mirroring dev-tools.
+  Key polish moves vs. the previous values:
+    - radius bumped 0.5rem → 0.725rem (rounder, more polished feel)
+    - primary tightened to a richer indigo (matches dev-tools' brand)
+    - muted-foreground lifted for better label readability
+    - border softened in light mode, made translucent in dark mode
+      (the design's "glass border" look on cards/inputs)
+    - card surface in dark mode lifted from --background (was 0.13 vs
+      0.09; now 0.205 vs 0.145) so cards visibly float
+  Sidebar tokens follow the same lift pattern.
+*/
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -11,71 +24,84 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.145 0 0);
+  --primary: oklch(0.4758 0.1734 274.5916);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.45 0 0);
+  --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27);
+  --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0 0);
-  --input: oklch(0.95 0 0);
-  --ring: oklch(0.55 0 0);
-  --radius: 0.5rem;
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --radius: 0.725rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.94 0 0);
-  --sidebar-accent-foreground: oklch(0.145 0 0);
-  --sidebar-border: oklch(0.92 0 0);
-  --sidebar-ring: oklch(0.55 0 0);
-  --success: oklch(0.62 0.17 145);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --success: oklch(0.65 0.18 145);
   --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.72 0.16 80);
+  --warning: oklch(0.78 0.16 80);
   --warning-foreground: oklch(0.145 0 0);
-  --info: oklch(0.60 0.18 240);
+  --info: oklch(0.62 0.18 240);
   --info-foreground: oklch(0.985 0 0);
+  --purple: oklch(0.55 0.22 305);
+  --purple-foreground: oklch(0.985 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
 }
 
 .dark {
-  --background: oklch(0.09 0 0);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.13 0 0);
+  --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.13 0 0);
+  --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.13 0 0);
-  --secondary: oklch(0.18 0 0);
+  --primary: oklch(0.4758 0.1734 274.5916);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.18 0 0);
-  --muted-foreground: oklch(0.62 0 0);
-  --accent: oklch(0.18 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.45 0.15 25);
+  --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.26 0 0);
-  --input: oklch(0.18 0 0);
-  --ring: oklch(0.5 0 0);
-  --radius: 0.5rem;
-  --sidebar: oklch(0.08 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.985 0 0);
-  --sidebar-primary-foreground: oklch(0.13 0 0);
-  --sidebar-accent: oklch(0.16 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.18 0 0);
-  --sidebar-ring: oklch(0.5 0 0);
-  --success: oklch(0.70 0.16 145);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --success: oklch(0.72 0.16 145);
   --success-foreground: oklch(0.145 0 0);
-  --warning: oklch(0.78 0.16 80);
+  --warning: oklch(0.82 0.15 80);
   --warning-foreground: oklch(0.145 0 0);
-  --info: oklch(0.65 0.18 240);
+  --info: oklch(0.68 0.17 240);
   --info-foreground: oklch(0.985 0 0);
+  --purple: oklch(0.72 0.20 305);
+  --purple-foreground: oklch(0.985 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
 }
 
 @theme inline {
@@ -98,10 +124,12 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  /* Radius scale matched to dev-tools: xs(−8) sm(−4) md(−2) lg(=) xl(+4). */
+  --radius-xs: calc(var(--radius) - 8px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-xl: calc(var(--radius) + 4px);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -116,6 +144,13 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-purple: var(--purple);
+  --color-purple-foreground: var(--purple-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
 }
 
 @layer base {
@@ -128,5 +163,169 @@
   }
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
   }
+
+  /*
+    Smoother transitions on hover-heavy surfaces.
+
+    The first version of this applied a universal `*` transition,
+    which animated EVERY class swap including the sidebar's active-item
+    background flip on navigation. That read as a flicker — the
+    outgoing active item faded over 200ms while the new page's content
+    skeleton also appeared, stacking two animations on top of each
+    other right where the user's looking.
+
+    Solution: target only the elements that benefit from smoother
+    hovers (buttons, links, interactive cards) and let everything else
+    use Tailwind's per-utility transition (snappy 150ms or none).
+  */
+  a,
+  button,
+  [role="button"],
+  [role="menuitem"],
+  [role="tab"],
+  input,
+  select,
+  textarea,
+  summary {
+    transition-property: background-color, border-color, color, fill, stroke,
+      opacity, box-shadow, transform;
+    transition-duration: 160ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      transition-duration: 0s !important;
+      animation-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Smooth view transitions for in-app navigation when the browser
+     supports them. Falls back silently on older browsers. */
+  @view-transition {
+    navigation: auto;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 220ms;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /*
+    Delayed skeleton reveal.
+
+    Each admin page is a client component that fetches its own data on
+    mount. The loading=true initial state would normally show a skeleton
+    for as long as the request takes — even when the request returns in
+    50ms, the skeleton flashes briefly and reads as a flicker.
+
+    Solution: skeletons start invisible and only fade in after 200ms.
+    If real content arrives in <200ms (the common case), the skeleton
+    was never visible — no flicker. If the request is slow, the
+    skeleton fades in smoothly and replaces with content when ready.
+
+    Applied via [data-slot="skeleton"] (already on the shared Skeleton
+    component) so every existing usage gets this for free, no
+    per-page change.
+  */
+  @keyframes skeleton-fade-in {
+    to {
+      opacity: 1;
+    }
+  }
+  [data-slot="skeleton"] {
+    opacity: 0;
+    animation: skeleton-fade-in 180ms 200ms forwards;
+  }
+}
+
+/*
+  Compact markdown for the agent chat panel (320px wide). The model
+  replies with headings, lists, bold and inline code — render them
+  tight enough to read like chat, not like a doc page.
+*/
+.agent-markdown > :first-child {
+  margin-top: 0;
+}
+.agent-markdown > :last-child {
+  margin-bottom: 0;
+}
+.agent-markdown p {
+  margin: 0.375rem 0;
+  line-height: 1.55;
+}
+.agent-markdown h1,
+.agent-markdown h2,
+.agent-markdown h3,
+.agent-markdown h4 {
+  margin: 0.625rem 0 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.agent-markdown ul,
+.agent-markdown ol {
+  margin: 0.375rem 0;
+  padding-left: 1.125rem;
+}
+.agent-markdown ul {
+  list-style: disc;
+}
+.agent-markdown ol {
+  list-style: decimal;
+}
+.agent-markdown li {
+  margin: 0.1875rem 0;
+  line-height: 1.5;
+}
+.agent-markdown code {
+  background: var(--muted);
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.25rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.6875rem;
+  word-break: break-all;
+}
+.agent-markdown pre {
+  margin: 0.375rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--muted);
+  padding: 0.5rem;
+}
+.agent-markdown pre code {
+  background: transparent;
+  padding: 0;
+  white-space: pre;
+  word-break: normal;
+}
+.agent-markdown strong {
+  font-weight: 600;
+}
+.agent-markdown a {
+  color: var(--info);
+  text-decoration: underline;
+}
+.agent-markdown blockquote {
+  margin: 0.375rem 0;
+  border-left: 2px solid var(--border);
+  padding-left: 0.625rem;
+  color: var(--muted-foreground);
+}
+.agent-markdown table {
+  margin: 0.375rem 0;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.6875rem;
+}
+.agent-markdown th,
+.agent-markdown td {
+  border: 1px solid var(--border);
+  padding: 0.1875rem 0.375rem;
+  text-align: left;
 }

@@ -2,6 +2,12 @@ import * as aws from "@pulumi/aws"
 
 const prefix = "{{prefix}}"
 
+// Look up AZs at deploy time rather than hardcoding `<region>a` / `<region>b`.
+// Not every region exposes AZs named a/b (e.g. some opt-in regions skip
+// letters), and an account may have specific AZs disabled. The dynamic
+// lookup costs one extra API call at deploy time and works everywhere.
+const availableAzs = aws.getAvailabilityZonesOutput({ state: "available" })
+
 // ── VPC ─────────────────────────────────────────────────────────────────────
 export const vpc = new aws.ec2.Vpc(`${prefix}-vpc`, {
   cidrBlock:          "{{vpcCidr}}",
@@ -20,7 +26,7 @@ const igw = new aws.ec2.InternetGateway(`${prefix}-igw`, {
 export const publicSubnet1 = new aws.ec2.Subnet(`${prefix}-public-1`, {
   vpcId:               vpc.id,
   cidrBlock:           "10.0.1.0/24",
-  availabilityZone:    "{{region}}a",
+  availabilityZone:    availableAzs.names[0],
   mapPublicIpOnLaunch: true,
   tags: { Name: `${prefix}-public-1` },
 })
@@ -28,7 +34,7 @@ export const publicSubnet1 = new aws.ec2.Subnet(`${prefix}-public-1`, {
 export const publicSubnet2 = new aws.ec2.Subnet(`${prefix}-public-2`, {
   vpcId:               vpc.id,
   cidrBlock:           "10.0.2.0/24",
-  availabilityZone:    "{{region}}b",
+  availabilityZone:    availableAzs.names[1],
   mapPublicIpOnLaunch: true,
   tags: { Name: `${prefix}-public-2` },
 })
@@ -46,13 +52,13 @@ new aws.ec2.RouteTableAssociation(`${prefix}-public-rta-2`, { subnetId: publicSu
 export const privateSubnet1 = new aws.ec2.Subnet(`${prefix}-private-1`, {
   vpcId:            vpc.id,
   cidrBlock:        "10.0.3.0/24",
-  availabilityZone: "{{region}}a",
+  availabilityZone: availableAzs.names[0],
   tags: { Name: `${prefix}-private-1` },
 })
 export const privateSubnet2 = new aws.ec2.Subnet(`${prefix}-private-2`, {
   vpcId:            vpc.id,
   cidrBlock:        "10.0.4.0/24",
-  availabilityZone: "{{region}}b",
+  availabilityZone: availableAzs.names[1],
   tags: { Name: `${prefix}-private-2` },
 })
 

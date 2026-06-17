@@ -1,0 +1,201 @@
+name: CD — staging
+
+# Trigger rules:
+#   - push to `staging` branch
+#   - AND the head commit message contains the literal "[deploy]"
+# Anything else (other branches, staging without [deploy]) → no-op.
+on:
+  push:
+    branches:
+      - staging
+
+# Serialise deploys: a second [deploy] push waits for the current one
+# instead of clobbering it mid-recreate.
+concurrency:
+  group: cd-staging
+  cancel-in-progress: false
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 1 — build the consolidated image and push to ECR with two tags.
+  # ──────────────────────────────────────────────────────────────────────
+  build-and-push:
+    if: contains(github.event.head_commit.message, '[deploy]')
+    runs-on: self-hosted
+    timeout-minutes: 30
+    outputs:
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute short SHA
+        id: meta
+        run: echo "short_sha=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64
+          # NEXT_PUBLIC_* values are baked into the JS bundle at build
+          # time — they must be passed here, not at runtime.
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.sre-agent.opengig.work
+            NEXT_PUBLIC_ADMIN_URL=https://admin.sre-agent.opengig.work
+            NEXT_PUBLIC_USER_APP_URL=https://web.sre-agent.opengig.work
+          tags: |
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:sha-${{ steps.meta.outputs.short_sha }}
+          # Cache layers as a separate tag in the same ECR repo. Shared
+          # across all self-hosted runners (each runner pulls/pushes the
+          # same registry). Costs ~1.5 GB extra ECR storage but saves
+          # the full Next.js build (~5 min) on every CD run.
+          cache-from: |
+            type=registry,ref=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:buildcache
+          cache-to: |
+            type=registry,ref=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
+
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 2 — SSH to the prod VM. The forced-command in authorized_keys
+  # means the only thing the key can do is run /home/ubuntu/deploy-staging.sh,
+  # which pulls the new :latest image and recreates api/web/admin.
+  # ──────────────────────────────────────────────────────────────────────
+  deploy:
+    needs: build-and-push
+    if: contains(github.event.head_commit.message, '[deploy]')
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Write SSH private key and harvest host key
+        env:
+          CD_SSH_PRIVATE_KEY: ${{ secrets.CD_SSH_PRIVATE_KEY }}
+          # Hardcoded — these aren't sensitive. ubuntu is the default
+          # Lightsail user; the IP is public in cert transparency logs.
+          # Using literals here avoids "secret accidentally empty" failure
+          # modes when the GitHub Secrets UI silently saves a blank value.
+          STAGING_HOST_RAW: 13.205.65.179
+          STAGING_USER_RAW: ubuntu
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+
+          # Strip ALL whitespace from host/user secrets. Trailing newlines
+          # from pasting into the GitHub UI cause ssh to receive a hostname
+          # with an embedded \n and bail with a usage error.
+          STAGING_HOST="$(printf '%s' "$STAGING_HOST_RAW" | tr -d '[:space:]')"
+          STAGING_USER="$(printf '%s' "$STAGING_USER_RAW" | tr -d '[:space:]')"
+
+          # Diagnostics that don't leak values
+          echo "STAGING_USER length (trimmed): ${#STAGING_USER}"
+          echo "STAGING_HOST length (trimmed): ${#STAGING_HOST}"
+          echo "STAGING_USER_RAW length (raw): ${#STAGING_USER_RAW}"
+          echo "STAGING_HOST_RAW length (raw): ${#STAGING_HOST_RAW}"
+
+          # Persist trimmed values for the next step. GITHUB_ENV is the
+          # standard way to pass vars between steps.
+          {
+            echo "STAGING_USER=$STAGING_USER"
+            echo "STAGING_HOST=$STAGING_HOST"
+          } >> "$GITHUB_ENV"
+
+          # Write key from secret. Trailing newline matters for OpenSSH.
+          printf '%s\n' "$CD_SSH_PRIVATE_KEY" > "$HOME/.ssh/cd_key"
+          chmod 600 "$HOME/.ssh/cd_key"
+
+          # Sanity: key file is non-empty and looks like an OpenSSH key.
+          test -s "$HOME/.ssh/cd_key" || { echo "::error::cd_key is empty — CD_SSH_PRIVATE_KEY secret missing/empty"; exit 1; }
+          head -1 "$HOME/.ssh/cd_key" | grep -q "BEGIN .* PRIVATE KEY" || {
+            echo "::error::cd_key first line is not 'BEGIN ... PRIVATE KEY' — secret likely truncated or pasted wrong"; exit 1;
+          }
+
+          # Sanity: host + user non-empty after trim.
+          test -n "$STAGING_HOST" || { echo "::error::STAGING_HOST secret is empty (or whitespace-only)"; exit 1; }
+          test -n "$STAGING_USER" || { echo "::error::STAGING_USER secret is empty (or whitespace-only)"; exit 1; }
+
+          # Pin host key so we don't trust whatever shows up. Errors no
+          # longer hidden — if ssh-keyscan fails we want to see it.
+          ssh-keyscan -T 10 -H "$STAGING_HOST" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          test -s "$HOME/.ssh/known_hosts" || {
+            echo "::error::ssh-keyscan produced no host key for $STAGING_HOST — firewall or DNS issue"; exit 1;
+          }
+
+      - name: Trigger deploy via forced-command SSH
+        run: |
+          set -euo pipefail
+          # STAGING_USER and STAGING_HOST come from $GITHUB_ENV, trimmed
+          # of whitespace by the previous step.
+          echo "Deploying as ${STAGING_USER}@${STAGING_HOST}"
+
+          # The deploy script is hardcoded in authorized_keys via the
+          # `command="..."` option. Whatever string we send here is
+          # ignored. We pass "deploy" purely as a marker for audit clarity.
+          ssh \
+            -i "$HOME/.ssh/cd_key" \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=30 \
+            "${STAGING_USER}@${STAGING_HOST}" \
+            deploy
+
+      - name: Wipe SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/cd_key"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 3 — Smoke test the public endpoints after deploy.
+  # Runs even if deploy succeeded so we catch "container is up but app
+  # broke during boot" failures.
+  # ──────────────────────────────────────────────────────────────────────
+  smoke-test:
+    needs: deploy
+    if: contains(github.event.head_commit.message, '[deploy]')
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - name: Wait for new containers to settle
+        run: sleep 20
+
+      - name: Probe public endpoints
+        run: |
+          set -e
+          for url in \
+            https://api.sre-agent.opengig.work/health \
+            https://web.sre-agent.opengig.work \
+            https://admin.sre-agent.opengig.work; do
+            echo "Probing $url"
+            # Retry up to 6 times (60s total) — first hits may race the
+            # container becoming healthy after `up -d`.
+            for attempt in 1 2 3 4 5 6; do
+              if curl -fsSL -o /dev/null -w '%{http_code}\n' "$url" \
+                   --max-time 10 | grep -qE '^(2|3)'; then
+                echo "  OK"
+                break
+              fi
+              echo "  attempt $attempt failed, retrying in 10s..."
+              sleep 10
+              if [ "$attempt" = "6" ]; then
+                echo "  FAILED after 6 attempts"
+                exit 1
+              fi
+            done
+          done

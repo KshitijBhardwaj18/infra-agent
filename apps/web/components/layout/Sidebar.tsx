@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   FolderGit2,
-  Zap,
   Home,
   Rocket,
   TestTube2,
@@ -16,7 +15,13 @@ import {
   ChevronDown,
   PanelLeftClose,
   PanelLeft,
+  Siren,
+  Boxes,
+  Plus,
 } from "lucide-react";
+import { HeizenMark } from "@/components/HeizenMark";
+import { useProject } from "@/hooks/useProject";
+import { envSlugOf, envNameOf } from "@/lib/env-display";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -25,6 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Separator } from "@/components/ui/separator";
 import { signOut, useSession } from "@/lib/auth-client";
 
 interface SidebarProps {
@@ -49,12 +55,15 @@ function NavItem({
     <Link href={href}>
       <div
         className={cn(
-          "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors",
-          active && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+          "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium",
+          "transition-[background-color,color,transform] duration-150",
+          active
+            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+            : "text-muted-foreground hover:translate-x-0.5 hover:bg-sidebar-accent/60 hover:text-foreground",
           collapsed && "justify-center",
         )}
       >
-        <Icon size={14} className="shrink-0" />
+        <Icon size={15} className="shrink-0" />
         {!collapsed && <span className="truncate">{label}</span>}
       </div>
     </Link>
@@ -73,7 +82,19 @@ function SectionLabel({ label, collapsed }: { label: string; collapsed: boolean 
 export function Sidebar({ projectSlug, projectName }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { project } = useProject(projectSlug);
   const [collapsed, setCollapsed] = useState(false);
+
+  // Environments shown in the nav: production tier first, then staging tier,
+  // then custom envs alphabetically. Driven off the project so custom envs
+  // appear automatically.
+  // Sort order: production tier first, staging next, then everything else
+  // (CUSTOM, or any future type) grouped at the end and ordered by name.
+  const envRank = (e: { type: string }) =>
+    e.type === "PRODUCTION" ? 0 : e.type === "STAGING" ? 1 : 2;
+  const navEnvs = [...(project?.environments ?? [])].sort(
+    (a, b) => envRank(a) - envRank(b) || envNameOf(a).localeCompare(envNameOf(b)),
+  );
 
   useEffect(() => {
     const stored = localStorage.getItem("heizen-sidebar-collapsed");
@@ -103,10 +124,10 @@ export function Sidebar({ projectSlug, projectName }: SidebarProps) {
         collapsed ? "w-[52px]" : "w-56",
       )}
     >
-      <div className="flex h-[52px] items-center justify-between border-b border-sidebar-border px-3">
-        <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent ring-1 ring-sidebar-border">
-            <Zap size={13} className="text-sidebar-accent-foreground" />
+      <div className="flex h-[60px] items-center justify-between border-b border-sidebar-border px-3">
+        <Link href="/dashboard" className="flex items-center gap-2.5 overflow-hidden">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground p-1.5 shadow-sm">
+            <HeizenMark className="h-full w-full" />
           </div>
           {!collapsed && <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">Heizen</span>}
         </Link>
@@ -160,19 +181,30 @@ export function Sidebar({ projectSlug, projectName }: SidebarProps) {
                 collapsed={collapsed}
                 active={pathname === `/projects/${projectSlug}`}
               />
+              {navEnvs.map((env) => (
+                <NavItem
+                  key={env.id}
+                  href={`/projects/${projectSlug}/${envSlugOf(env)}`}
+                  icon={
+                    env.type === "CUSTOM"
+                      ? Boxes
+                      : (env.tier ?? env.type) === "PRODUCTION"
+                        ? Rocket
+                        : TestTube2
+                  }
+                  label={envNameOf(env)}
+                  collapsed={collapsed}
+                  active={pathname.startsWith(
+                    `/projects/${projectSlug}/${envSlugOf(env)}`,
+                  )}
+                />
+              ))}
               <NavItem
-                href={`/projects/${projectSlug}/production`}
-                icon={Rocket}
-                label="Production"
+                href={`/projects/${projectSlug}?new-env=1`}
+                icon={Plus}
+                label="New environment"
                 collapsed={collapsed}
-                active={pathname.startsWith(`/projects/${projectSlug}/production`)}
-              />
-              <NavItem
-                href={`/projects/${projectSlug}/staging`}
-                icon={TestTube2}
-                label="Staging"
-                collapsed={collapsed}
-                active={pathname.startsWith(`/projects/${projectSlug}/staging`)}
+                active={false}
               />
               <NavItem
                 href={`/projects/${projectSlug}/deployments`}
@@ -180,6 +212,13 @@ export function Sidebar({ projectSlug, projectName }: SidebarProps) {
                 label="Deployments"
                 collapsed={collapsed}
                 active={pathname.startsWith(`/projects/${projectSlug}/deployments`)}
+              />
+              <NavItem
+                href={`/projects/${projectSlug}/incidents`}
+                icon={Siren}
+                label="Incidents"
+                collapsed={collapsed}
+                active={pathname.startsWith(`/projects/${projectSlug}/incidents`)}
               />
               <NavItem
                 href={`/projects/${projectSlug}/secrets`}
@@ -198,6 +237,10 @@ export function Sidebar({ projectSlug, projectName }: SidebarProps) {
             </div>
           </>
         )}
+
+        {/* Admin nav intentionally removed from the user app sidebar — admin
+            lives on the admin subdomain (ADMIN_ORIGIN) and is not reachable
+            via path on the user host. Bookmark admin.host directly. */}
       </div>
 
       <div className="border-t border-sidebar-border p-2">

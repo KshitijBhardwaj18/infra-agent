@@ -8,6 +8,7 @@ import { Inject } from "@nestjs/common";
 import { Server, Socket } from "socket.io";
 import { auth } from "../auth/auth.config";
 import { PRISMA } from "../prisma/prisma.module";
+import { env } from "../common/env";
 import type { PrismaClient } from "@heizen/db";
 import type {
   DeploymentStatusPayload,
@@ -18,7 +19,7 @@ import type {
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
+    origin: env("CORS_ORIGIN") ?? "http://localhost:3000",
     credentials: true,
   },
 })
@@ -78,5 +79,12 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   emitGithubDisconnected(orgId: string, payload: GithubDisconnectedPayload) {
     this.server.to(`org:${orgId}`).emit("github:disconnected", payload);
+  }
+
+  emitIncidentUpdate(
+    orgId: string,
+    payload: { environmentId: string; openCount: number },
+  ) {
+    this.server.to(`org:${orgId}`).emit("incident:update", payload);
   }
 }

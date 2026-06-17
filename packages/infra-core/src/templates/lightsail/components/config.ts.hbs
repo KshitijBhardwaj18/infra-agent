@@ -1,0 +1,24 @@
+// Pulumi config — secrets passed by the worker per deploy. All marked
+// `secret: true` server-side so they're encrypted in stack state.
+import * as pulumi from "@pulumi/pulumi"
+
+const cfg = new pulumi.Config()
+
+// Base64-encoded blobs. We base64 to avoid quoting hell when these
+// strings are embedded in the cloud-init shell script.
+export const composeB64    = cfg.requireSecret("composeB64")
+export const caddyfileB64  = cfg.requireSecret("caddyfileB64")
+export const envFileB64    = cfg.requireSecret("envFileB64")
+export const caddyDockerComposeB64 = cfg.requireSecret("caddyDockerComposeB64")
+{{#if lokiLogs}}
+export const alloyDockerComposeB64 = cfg.requireSecret("alloyDockerComposeB64")
+export const alloyConfigB64        = cfg.requireSecret("alloyConfigB64")
+{{/if}}
+
+// ECR creds — short-lived STS tokens. Used by cloud-init to docker
+// login then immediately unset. If the image is on Docker Hub or
+// public, these can be empty strings (Pulumi accepts empty secrets).
+export const ecrRegistry      = cfg.get("ecrRegistry") ?? ""
+export const ecrAccessKey     = cfg.getSecret("ecrAccessKey")
+export const ecrSecretKey     = cfg.getSecret("ecrSecretKey")
+export const ecrSessionToken  = cfg.getSecret("ecrSessionToken")

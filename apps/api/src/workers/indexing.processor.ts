@@ -8,6 +8,7 @@ import { GithubTokenService } from "../github/github-token.service";
 import { IndexingSseService } from "../github/indexing-sse.service";
 import { EventsGateway } from "../websocket/events.gateway";
 import type { HeizenConfig } from "@heizen/shared";
+import { resolveEnvDeploy } from "@heizen/shared";
 
 export interface IndexingJob {
   projectId: string;
@@ -57,7 +58,12 @@ export class IndexingProcessor extends WorkerHost {
     const env = await this.prisma.environment.findUnique({
       where: { id: environmentId },
     });
-    const envType = env?.type === "PRODUCTION" ? "production" : "staging";
+    if (!env) {
+      this.logger.debug(
+        `Environment ${environmentId} not found; indexing against default tier 'staging'`,
+      );
+    }
+    const envType = env ? resolveEnvDeploy(env).envType : "staging";
 
     try {
       let token: string;
@@ -99,10 +105,19 @@ export class IndexingProcessor extends WorkerHost {
 
       await this.prisma.environment.update({
         where: { id: environmentId },
-        data: { heizenConfig: JSON.parse(JSON.stringify(result.config)) },
+        data: {
+          heizenConfig: JSON.parse(JSON.stringify(result.config)),
+          composeServicesCache: result.compose
+            ? JSON.parse(JSON.stringify(result.compose))
+            : null,
+          composeFetchedAt: result.compose ? new Date() : null,
+        },
       });
 
-      this.indexingSse.emit(projectId, { step: "complete", data: result.config });
+      this.indexingSse.emit(projectId, {
+        step: "complete",
+        data: { ...result.config, compose: result.compose },
+      });
 
       this.gateway.emitIndexingComplete(project.organizationId, {
         projectId,

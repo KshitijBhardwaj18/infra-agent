@@ -33,8 +33,11 @@ export const db = new aws.rds.Instance(`${prefix}-db`, {
   storageEncrypted:    {{database.encrypted}},
   multiAz:             {{database.multiAz}},
   backupRetentionPeriod: {{database.backupRetentionDays}},
-  deletionProtection:  {{database.deletionProtection}},
-  skipFinalSnapshot:   {{#if database.deletionProtection}}false{{else}}true{{/if}},
+  // Lifecycle is managed by the platform, not AWS. Keeping protection
+  // off + skipping the final snapshot lets `pulumi destroy` complete
+  // without out-of-band intervention.
+  deletionProtection:  false,
+  skipFinalSnapshot:   true,
   tags: { Name: `${prefix}-db` },
 })
 {{/if}}
@@ -62,6 +65,10 @@ export const redis = new aws.elasticache.Cluster(`${prefix}-redis`, {
 {{#if hasStorage}}
 // ── S3 Bucket ─────────────────────────────────────────────────────────────────
 export const bucket = new aws.s3.BucketV2(`${prefix}-storage`, {
+  // forceDestroy lets `pulumi destroy` empty + delete the bucket in one
+  // call. Without it, AWS refuses to delete a non-empty bucket and the
+  // teardown fails partway.
+  forceDestroy: true,
   tags: { Name: `${prefix}-storage` },
 })
 

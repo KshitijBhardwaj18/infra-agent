@@ -1,16 +1,29 @@
 import "reflect-metadata";
 import type { Request, Response, NextFunction } from "express";
 import { NestFactory } from "@nestjs/core";
+import { Logger } from "@nestjs/common";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { getQueueToken } from "@nestjs/bullmq";
 import { AppModule } from "./app.module";
 import { auth } from "./auth/auth.config";
 import { toNodeHandler } from "better-auth/node";
 import { cleanStaleTempDirs } from "./common/clean-stale-temp-dirs";
-import { cleanupStaleDeployments, cleanupStaleIndexingJobs } from "./common/cleanup-stale-jobs";
+import { cleanupStaleDeployments } from "./common/cleanup-stale-jobs";
+import {
+  bootstrapSingleOrg,
+  bootstrapAdminUser,
+  bootstrapGithubConnection,
+} from "./common/bootstrap";
 import { PRISMA } from "./prisma/prisma.module";
+import { env } from "./common/env";
+import { readDeployRoleTemplate } from "@heizen/infra-core";
 
-const DEFAULT_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"];
+const DEFAULT_ORIGINS = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:3002",
+  "http://127.0.0.1:3002",
+];
 
 const REQUIRED_PRODUCTION_ENV = [
   "DATABASE_URL",
@@ -33,17 +46,38 @@ const REQUIRED_PRODUCTION_ENV = [
 
 function assertProductionConfig() {
   if (process.env.NODE_ENV !== "production") return;
-  const missing = REQUIRED_PRODUCTION_ENV.filter((k) => !process.env[k]);
+  const missing = REQUIRED_PRODUCTION_ENV.filter((k) => !env(k));
   if (missing.length > 0) {
     console.error(`FATAL: missing required production env vars: ${missing.join(", ")}`);
     process.exit(1);
   }
 }
 
+async function verifyBundledAssets() {
+  // Fail-fast (visibly) if the bundled CloudFormation deploy-role template
+  // didn't ship in infra-core's dist — that means a broken build, and we'd
+  // rather surface it at boot than when a customer first opens AWS setup.
+  // Non-fatal: a missing optional asset shouldn't take down auth/deploys.
+  try {
+    await readDeployRoleTemplate();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Error-level (not warn): a missing build artifact is a real problem ops
+    // should see. State the operational impact so the log line is actionable.
+    new Logger("Bootstrap").error(
+      `BUILD ASSET MISSING — the AWS deploy-role CloudFormation template did not ` +
+        `ship in this build; one-click AWS setup will be unavailable until the ` +
+        `build is fixed. Underlying error: ${msg}`,
+    );
+  }
+}
+
 function getAllowedOrigins(): string[] {
-  const fromEnv = process.env.CORS_ORIGIN;
-  const origins = fromEnv ? [fromEnv, ...DEFAULT_ORIGINS] : DEFAULT_ORIGINS;
-  return [...new Set(origins)];
+  const fromEnv = env("CORS_ORIGIN");
+  const parsed = fromEnv
+    ? fromEnv.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  return [...new Set([...parsed, ...DEFAULT_ORIGINS])];
 }
 
 function authCorsMiddleware(allowedOrigins: string[]) {
@@ -76,6 +110,8 @@ function authCorsMiddleware(allowedOrigins: string[]) {
 async function bootstrap() {
   assertProductionConfig();
 
+  await verifyBundledAssets();
+
   await cleanStaleTempDirs();
 
   const allowedOrigins = getAllowedOrigins();
@@ -84,7 +120,21 @@ async function bootstrap() {
   });
 
   const expressApp = app.getHttpAdapter().getInstance();
+
+  // Trust the reverse proxy (Caddy / load balancer) so req.protocol reflects
+  // the original HTTPS scheme via X-Forwarded-Proto. Required for Better Auth
+  // to mark cookies as Secure when the client used HTTPS but the origin saw HTTP.
+  expressApp.set("trust proxy", 1);
+
   expressApp.use("/api/auth", authCorsMiddleware(allowedOrigins));
+
+  // Block public sign-up. We can't use better-auth's disableSignUp because
+  // that also blocks our server-side auth.api.signUpEmail calls (bootstrap
+  // admin + /api/admin/users). Intercept the HTTP route here so external
+  // callers get 403 but internal Node calls still work.
+  expressApp.all("/api/auth/sign-up/*", (_req: Request, res: Response) => {
+    res.status(403).json({ error: "Self-signup is disabled" });
+  });
 
   expressApp.all("/api/auth/*", toNodeHandler(auth));
 
@@ -124,17 +174,32 @@ async function bootstrap() {
 
   const prisma = app.get(PRISMA);
   const deploymentQueue = app.get(getQueueToken("deployment"));
-  const indexingQueue = app.get(getQueueToken("indexing"));
+
+  const bootstrapLogger = new Logger("Bootstrap");
+  try {
+    await bootstrapSingleOrg(prisma, bootstrapLogger);
+  } catch (err) {
+    bootstrapLogger.error("Default-org bootstrap failed (continuing anyway):", err);
+  }
+  try {
+    await bootstrapAdminUser(bootstrapLogger);
+  } catch (err) {
+    bootstrapLogger.error("Admin-user bootstrap failed (continuing anyway):", err);
+  }
+  try {
+    await bootstrapGithubConnection(prisma, bootstrapLogger);
+  } catch (err) {
+    bootstrapLogger.error("GitHub-connection bootstrap failed (continuing anyway):", err);
+  }
 
   try {
     await cleanupStaleDeployments(prisma, deploymentQueue);
-    await cleanupStaleIndexingJobs(indexingQueue);
     console.log("Stale-job cleanup complete");
   } catch (err) {
     console.error("Stale-job cleanup failed (continuing anyway):", err);
   }
 
-  const port = process.env.PORT ?? 3001;
+  const port = env("PORT") ?? 3001;
   await app.listen(port);
   console.log(`Heizen API running on http://localhost:${port}`);
 

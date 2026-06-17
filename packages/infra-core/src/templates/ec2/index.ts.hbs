@@ -1,0 +1,23 @@
+// EC2-based deploy: one production-grade VM running the user's
+// docker-compose behind Caddy, with managed RDS for data and an S3
+// artifacts bucket for config delivery. Compose is the source of truth;
+// in-place updates run via SSM (no VM replacement).
+import { instance, eip } from "./components/instance"
+import { vpc } from "./components/networking"
+import { artifactsBucket } from "./components/artifacts"
+{{#if hasDatabase}}import { db } from "./components/store"
+{{/if}}{{#if hasStorage}}import { bucket } from "./components/store"
+{{/if}}
+
+export const instanceId          = instance.id
+export const instanceName         = "{{prefix}}-vm"
+export const publicIp             = eip.publicIp
+// Alias: the existing endpoints UI keys off a static IP output, so EC2
+// reuses that surface for the "point DNS here" card.
+export const staticIpAddress      = eip.publicIp
+export const vpcId                = vpc.id
+export const artifactsBucketName  = artifactsBucket.bucket
+export const region               = "{{region}}"
+{{#if hasDatabase}}export const dbEndpoint           = db.endpoint
+{{/if}}{{#if hasStorage}}export const bucketName           = bucket.bucket
+{{/if}}

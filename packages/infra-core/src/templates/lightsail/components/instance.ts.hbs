@@ -1,0 +1,51 @@
+import * as aws from "@pulumi/aws"
+import * as pulumi from "@pulumi/pulumi"
+import { userData } from "./cloud-init"
+
+const prefix = "{{prefix}}"
+
+// AZ lookup at deploy time (same pattern as the production template).
+// Lightsail bundles work in every Lightsail-supported AZ in the region.
+const availableAzs = aws.getAvailabilityZonesOutput({ state: "available" })
+
+export const instance = new aws.lightsail.Instance(`${prefix}-vm`, {
+  availabilityZone: availableAzs.names[0],
+  blueprintId:      "ubuntu_22_04",
+  bundleId:         "{{bundleId}}",
+  userData,
+  // Tags surface on the AWS console; cheap orientation aid.
+  tags: {
+    Name:      `${prefix}-vm`,
+    ManagedBy: "heizen",
+    Project:   "{{project}}",
+    Env:       "{{env}}",
+  },
+})
+
+{{#if staticIpEnabled}}
+// One static IPv4. Lightsail allocates from a pool — free while
+// attached, charges per hour when detached. Pulumi destroy releases it
+// cleanly so no cost-after-destroy gotcha.
+export const staticIp = new aws.lightsail.StaticIp(`${prefix}-ip`, {})
+
+new aws.lightsail.StaticIpAttachment(`${prefix}-ip-att`, {
+  staticIpName: staticIp.name,
+  instanceName: instance.name,
+})
+{{/if}}
+
+// Open the only ports we need on the Lightsail firewall. SSH for
+// manual debugging, 80 for Caddy ACME HTTP-01 challenge + HTTP->HTTPS
+// redirect, 443 for live HTTPS traffic. No other ports — Docker
+// services are reached via the Caddy container inside the box.
+new aws.lightsail.InstancePublicPorts(`${prefix}-ports`, {
+  instanceName: instance.name,
+  portInfos: [
+    { fromPort: 22,  toPort: 22,  protocol: "tcp" },
+    { fromPort: 80,  toPort: 80,  protocol: "tcp" },
+    { fromPort: 443, toPort: 443, protocol: "tcp" },
+{{#each openPorts}}
+    { fromPort: {{port}}, toPort: {{port}}, protocol: "{{protocol}}", cidrs: ["{{cidr}}"] },
+{{/each}}
+  ],
+})

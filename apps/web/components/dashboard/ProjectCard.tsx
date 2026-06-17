@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { GitBranch } from "lucide-react";
+import { GitBranch, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 
 interface Environment {
@@ -20,58 +21,62 @@ interface Project {
   environments: Environment[];
 }
 
-function StatusDot({ status }: { status: string }) {
-  const color =
-    status === "LIVE"
-      ? "bg-success"
-      : status === "FAILED"
-        ? "bg-destructive"
-        : status === "DEPLOYING"
-          ? "bg-info animate-pulse"
-          : "bg-muted-foreground";
-
-  return <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", color)} />;
-}
-
-function EnvBadge({ env }: { env: Environment }) {
-  const label = env.type.charAt(0) + env.type.slice(1).toLowerCase();
-  const status = env.status.toLowerCase().replace("_", " ");
-
-  return (
-    <Badge variant="outline" className="gap-1.5 font-normal text-foreground/90">
-      <StatusDot status={env.status} />
-      {label} · {status}
-    </Badge>
-  );
-}
-
 export function ProjectCard({ project }: { project: Project }) {
   const connected = Boolean(project.githubOwner && project.githubRepo);
   const initial = project.name.charAt(0).toUpperCase();
+  const repoPath = connected
+    ? `${project.githubOwner}/${project.githubRepo}`
+    : "No repository linked";
 
   return (
-    <Link href={`/projects/${project.slug}`}>
-      <div className="cursor-pointer rounded-lg border border-border bg-card p-4 transition-colors hover:border-foreground/20">
+    <Link href={`/projects/${project.slug}`} className="group block">
+      <div
+        className={cn(
+          "h-full rounded-xl border border-border bg-card p-5",
+          "transition-[border-color,transform,box-shadow] duration-200",
+          "group-hover:-translate-y-0.5 group-hover:border-foreground/30 group-hover:shadow-sm",
+        )}
+      >
+        {/* Top row: logo + status pill */}
         <div className="flex items-start justify-between gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-violet-600 text-sm font-semibold text-white">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 text-sm font-semibold text-white shadow-sm">
             {initial}
           </div>
-          <Badge variant={connected ? "secondary" : "outline"} className="font-normal">
+          <Badge
+            variant={connected ? "secondary" : "outline"}
+            className="font-medium"
+          >
             {connected ? "Connected" : "Not connected"}
           </Badge>
         </div>
 
-        <div className="mt-3">
-          <p className="text-sm font-medium text-foreground">{project.name}</p>
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-            <GitBranch size={12} />
-            {connected ? `${project.githubOwner}/${project.githubRepo}` : "No repository linked"}
+        {/* Title + repo path */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-base font-semibold text-foreground">
+              {project.name}
+            </p>
+            <ArrowRight
+              size={14}
+              className="shrink-0 text-muted-foreground/50 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-foreground"
+            />
+          </div>
+          <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+            <GitBranch size={11} className="shrink-0" />
+            <span className="truncate">{repoPath}</span>
           </p>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        {/* Env status row */}
+        <div className="mt-4 flex flex-wrap gap-1.5 border-t border-border/60 pt-3">
           {project.environments.map((env) => (
-            <EnvBadge key={env.id} env={env} />
+            <StatusBadge
+              key={env.id}
+              status={env.status}
+              label={
+                env.type.charAt(0) + env.type.slice(1).toLowerCase()
+              }
+            />
           ))}
         </div>
       </div>

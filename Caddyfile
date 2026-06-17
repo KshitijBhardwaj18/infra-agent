@@ -1,0 +1,41 @@
+# Caddy reverse proxy for the Heizen Lightsail deployment.
+# Caddy auto-provisions Let's Encrypt certs on first request for each host.
+#
+# Replace `yourdomain.com` with your actual domain. The DNS A records for
+# all three hostnames must point at the Lightsail static IP BEFORE the
+# first request — otherwise Let's Encrypt's HTTP-01 challenge fails.
+
+# Email used for Let's Encrypt account registration + expiry notifications.
+{
+	email kshitij@heizen.tech
+}
+
+# User-facing app
+web.sre-agent.opengig.work {
+	reverse_proxy web:3000
+}
+
+# Admin panel
+admin.sre-agent.opengig.work {
+	reverse_proxy admin:3002
+}
+
+# API + websockets + GitHub webhooks
+# - GitHub push payloads can exceed Caddy's default body limit on monorepo
+#   pushes; raise it explicitly. The api server captures the raw body at
+#   /api/github/webhooks for HMAC-SHA256 signature verification, so Caddy
+#   must stream the body through untouched (default reverse_proxy behavior).
+# - SSE deploy log streams stay open for the duration of a deploy; bump
+#   the flush + idle timeouts so Caddy doesn't kill them mid-stream.
+api.sre-agent.opengig.work {
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy api:3001 {
+		flush_interval -1
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+}

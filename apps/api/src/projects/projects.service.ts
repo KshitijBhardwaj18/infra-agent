@@ -16,31 +16,94 @@ export class ProjectsService {
 
   constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {}
 
-  async create(orgId: string, name: string, slug: string) {
-    const trimmedName = name?.trim();
+  async create(
+    orgId: string,
+    creatorUserId: string,
+    body: {
+      name: string;
+      slug: string;
+      githubInstallationId?: string;
+      githubOwner?: string;
+      githubRepo?: string;
+      githubBranch?: string;
+    },
+  ) {
+    const trimmedName = body.name?.trim();
     if (!trimmedName) {
       throw new BadRequestException("Project name is required");
     }
-    if (!slug || !/^[a-z0-9-]{2,40}$/.test(slug)) {
+    if (!body.slug || !/^[a-z0-9-]{2,40}$/.test(body.slug)) {
       throw new BadRequestException(
         "Slug must be 2-40 characters, lowercase letters, numbers, and hyphens only",
       );
     }
 
+    const hasGithub =
+      body.githubInstallationId &&
+      body.githubOwner &&
+      body.githubRepo &&
+      body.githubBranch;
+
+    if (body.githubInstallationId && !hasGithub) {
+      throw new BadRequestException(
+        "When providing a GitHub installation, owner, repo, and branch are all required",
+      );
+    }
+
+    if (hasGithub) {
+      const conn = await this.prisma.githubConnection.findFirst({
+        where: { installationId: body.githubInstallationId },
+        select: { id: true },
+      });
+      if (!conn) {
+        throw new BadRequestException("Unknown GitHub installation");
+      }
+    }
+
     try {
-      const project = await this.prisma.project.create({
-        data: {
-          organizationId: orgId,
-          name: trimmedName,
-          slug,
-          environments: {
-            create: [
-              { type: "STAGING" },
-              { type: "PRODUCTION" },
-            ],
+      // Wrap project + ownership creation in a transaction so we never
+      // end up with a project that has no members (would lock everyone
+      // out except system admins).
+      const project = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.project.create({
+          data: {
+            organizationId: orgId,
+            name: trimmedName,
+            slug: body.slug,
+            ...(hasGithub
+              ? {
+                  githubInstallationId: body.githubInstallationId,
+                  githubOwner: body.githubOwner,
+                  githubRepo: body.githubRepo,
+                  githubBranch: body.githubBranch,
+                }
+              : {}),
+            environments: {
+              create: [
+                { type: "STAGING", name: "Staging", slug: "staging", tier: "STAGING" },
+                {
+                  type: "PRODUCTION",
+                  name: "Production",
+                  slug: "production",
+                  tier: "PRODUCTION",
+                },
+              ],
+            },
           },
-        },
-        include: { environments: true },
+          include: { environments: true },
+        });
+
+        // Creator becomes the OWNER. Admins can change/add owners later
+        // via the admin panel's project-members sheet.
+        await tx.projectMember.create({
+          data: {
+            userId: creatorUserId,
+            projectId: created.id,
+            role: "OWNER",
+          },
+        });
+
+        return created;
       });
       return project;
     } catch (err) {
@@ -64,9 +127,16 @@ export class ProjectsService {
             id: true,
             type: true,
             status: true,
+            region: true,
             lastDeployedAt: true,
             heizenConfig: true,
+            composeServicesCache: true,
             stackOutputs: true,
+            // Needed by the env page to render the correct strategy badge
+            // + endpoints card (EC2 vs ECS vs Lightsail). Without these the
+            // page falls back to inferring "ECS" for any production env.
+            deployStrategy: true,
+            ec2InstanceType: true,
           },
         },
       },

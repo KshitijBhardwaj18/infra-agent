@@ -59,6 +59,11 @@ export interface GithubDisconnectedPayload {
   reason: "uninstalled" | "suspended" | "repo_removed";
 }
 
+export interface IncidentUpdatePayload {
+  environmentId: string;
+  openCount: number;
+}
+
 export interface AgentChatSsePayload {
   text?: string;
   type?: "done";
@@ -69,4 +74,5 @@ export type WebSocketEvent =
   | { event: "deployment:status"; data: DeploymentStatusPayload }
   | { event: "environment:status"; data: EnvironmentStatusPayload }
   | { event: "indexing:complete"; data: IndexingCompletePayload }
-  | { event: "github:disconnected"; data: GithubDisconnectedPayload };
+  | { event: "github:disconnected"; data: GithubDisconnectedPayload }
+  | { event: "incident:update"; data: IncidentUpdatePayload };

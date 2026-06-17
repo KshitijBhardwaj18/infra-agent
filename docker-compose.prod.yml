@@ -1,0 +1,103 @@
+# Production-style docker-compose for a single Lightsail VM running the
+# whole Heizen stack behind Caddy. Pull the consolidated image once,
+# run it as three containers with different CMD overrides.
+#
+# Required env vars in `.env` next to this file:
+#   POSTGRES_PASSWORD       postgres password
+#   HEIZEN_IMAGE            full image ref, e.g. spade5423/sre-platform:latest
+#   plus everything in apps/api/.env.example (DATABASE_URL points to the
+#   postgres service name below: postgresql://heizen:${POSTGRES_PASSWORD}@postgres:5432/heizen)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: heizen
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: heizen
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heizen"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: ${HEIZEN_IMAGE}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+    command: ["/entrypoint.sh"]
+    volumes:
+      - pulumi_deps:/pulumi-deps
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    stop_grace_period: 30s
+
+  web:
+    image: ${HEIZEN_IMAGE}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://api:3001}
+      NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL:-http://localhost:3002}
+    command: ["node", "web-runtime/apps/web/server.js"]
+    depends_on:
+      - api
+    stop_grace_period: 15s
+
+  admin:
+    image: ${HEIZEN_IMAGE}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3002"
+      HOSTNAME: "0.0.0.0"
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://api:3001}
+      NEXT_PUBLIC_USER_APP_URL: ${NEXT_PUBLIC_USER_APP_URL:-http://localhost:3000}
+    command: ["node", "admin-runtime/apps/admin/server.js"]
+    depends_on:
+      - api
+    stop_grace_period: 15s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+      - admin
+
+volumes:
+  postgres_data:
+  redis_data:
+  pulumi_deps:
+  caddy_data:
+  caddy_config:

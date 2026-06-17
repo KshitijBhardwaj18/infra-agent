@@ -12,6 +12,7 @@ const statusBadgeVariants = cva(
         destructive: "bg-destructive/10 text-destructive ring-1 ring-destructive/20",
         info: "bg-info/10 text-info ring-1 ring-info/20",
         muted: "bg-muted text-muted-foreground",
+        purple: "bg-purple/10 text-purple ring-1 ring-purple/20",
       },
     },
     defaultVariants: {
@@ -26,8 +27,15 @@ const dotVariants: Record<string, string> = {
   DEPLOYING: "bg-info animate-pulse",
   SUCCESS: "bg-success",
   NOT_DEPLOYED: "bg-muted-foreground/50",
-  QUEUED: "bg-muted-foreground/50",
+  QUEUED: "bg-info animate-pulse",
   CANCELLED: "bg-muted-foreground/50",
+  // Destroy lifecycle — orange for "in progress", muted for "tombstone"
+  DESTROYING: "bg-warning animate-pulse",
+  DESTROYED: "bg-muted-foreground/50",
+  TODO: "bg-info",
+  IN_PROGRESS: "bg-purple animate-pulse",
+  TESTING: "bg-warning",
+  DONE: "bg-success",
 };
 
 const badgeVariantMap: Record<string, VariantProps<typeof statusBadgeVariants>["variant"]> = {
@@ -36,8 +44,14 @@ const badgeVariantMap: Record<string, VariantProps<typeof statusBadgeVariants>["
   DEPLOYING: "info",
   SUCCESS: "success",
   NOT_DEPLOYED: "muted",
-  QUEUED: "muted",
+  QUEUED: "info",
   CANCELLED: "muted",
+  DESTROYING: "warning",
+  DESTROYED: "muted",
+  TODO: "info",
+  IN_PROGRESS: "purple",
+  TESTING: "warning",
+  DONE: "success",
 };
 
 function normalizeStatus(status: string) {

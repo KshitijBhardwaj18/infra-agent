@@ -1,12 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { env } from "../env";
 
 @Injectable()
 export class EncryptionService {
   private readonly key: Buffer;
 
   constructor() {
-    const hex = process.env.ENCRYPTION_KEY;
+    const hex = env("ENCRYPTION_KEY");
     if (!hex || hex.length !== 64) {
       throw new Error("ENCRYPTION_KEY must be 32 bytes hex (64 chars)");
     }

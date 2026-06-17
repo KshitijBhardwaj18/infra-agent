@@ -42,7 +42,10 @@ export const PRODUCTION_DEFAULTS: EnvDefaults = {
   database: {
     size: "small",
     multiAz: true,
-    deletionProtection: true,
+    // Platform owns the env lifecycle — destroys go through the UI,
+    // never directly via AWS console. Keeping AWS-level deletion
+    // protection on would block our automated `pulumi destroy` path.
+    deletionProtection: false,
     backupRetentionDays: 14,
   },
   cache: { size: "small" },

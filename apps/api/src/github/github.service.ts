@@ -17,10 +17,28 @@ import { GithubTokenService } from "./github-token.service";
 import { IndexingSseService } from "./indexing-sse.service";
 import { signState, type GithubStatePayload } from "./state";
 import { getInstallationManageUrl } from "@heizen/infra-core";
+import { env } from "../common/env";
 
 export type ReturnEnv = "staging" | "production";
 
 const VALID_ENVS: ReadonlySet<string> = new Set(["staging", "production"]);
+
+/**
+ * Default environment to index/read against when none is specified. Prefers
+ * the conventional "staging" slug, then any staging-tier env, then the first
+ * env — so projects without a literal staging env (only custom ones) still
+ * resolve a sensible default instead of returning nothing.
+ */
+function pickDefaultEnv<
+  T extends { slug?: string | null; tier?: string | null; type?: string },
+>(envs: T[]): T | undefined {
+  return (
+    envs.find((e) => e.slug === "staging") ?? // conventional staging slug
+    envs.find((e) => e.tier === "STAGING") ?? // any staging-tier env
+    envs.find((e) => e.type === "STAGING") ?? // legacy rows with no tier set
+    envs[0] // last resort: the project's first env
+  );
+}
 
 export function assertReturnEnv(env: string | undefined): ReturnEnv {
   if (!env || !VALID_ENVS.has(env)) return "staging";
@@ -40,7 +58,7 @@ export class GithubService {
   ) {}
 
   getInstallUrl(payload: GithubStatePayload): string {
-    const slug = process.env.GITHUB_APP_SLUG ?? "heizen";
+    const slug = env("GITHUB_APP_SLUG") ?? "heizen";
     const state = signState(payload);
     return `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(state)}`;
   }
@@ -186,16 +204,31 @@ export class GithubService {
     repo: string,
     branch: string,
     environmentId: string,
+    installationId?: string,
   ) {
     const project = await this.projects.get(orgId, projectId);
-    if (!project.githubInstallationId) {
+
+    const targetInstallationId = installationId ?? project.githubInstallationId;
+    if (!targetInstallationId) {
       throw new ConflictException(
         "GitHub App not installed. Please install the app before connecting a repository.",
       );
     }
 
-    // Verify the selected repo is actually accessible to this installation
-    const token = await this.tokenService.getToken(project.githubInstallationId);
+    if (installationId && project.githubInstallationId !== installationId) {
+      const conn = await this.prisma.githubConnection.findFirst({
+        where: { installationId },
+        select: { id: true },
+      });
+      if (!conn) {
+        throw new ForbiddenException("Unknown GitHub installation");
+      }
+    }
+
+    // Verify the selected repo is accessible BEFORE persisting the rebind, so a
+    // failed access check can't leave the project pointing at a connection that
+    // doesn't actually grant access to the requested repo.
+    const token = await this.tokenService.getToken(targetInstallationId);
     const checkRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -218,7 +251,14 @@ export class GithubService {
 
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { githubOwner: owner, githubRepo: repo, githubBranch: branch },
+      data: {
+        githubOwner: owner,
+        githubRepo: repo,
+        githubBranch: branch,
+        ...(installationId && project.githubInstallationId !== installationId
+          ? { githubInstallationId: installationId }
+          : {}),
+      },
     });
 
     await this.triggerIndex(projectId, environmentId);
@@ -245,7 +285,7 @@ export class GithubService {
 
     const env =
       project.environments.find((e) => e.id === environmentId) ??
-      project.environments.find((e) => e.type === "STAGING");
+      pickDefaultEnv(project.environments);
 
     if (!env) throw new NotFoundException("Environment not found");
 
@@ -281,7 +321,7 @@ export class GithubService {
 
   async getIndexResult(orgId: string, projectId: string) {
     const project = await this.projects.get(orgId, projectId);
-    const env = project.environments.find((e) => e.type === "STAGING");
+    const env = pickDefaultEnv(project.environments);
     if (!env) throw new NotFoundException("Environment not found");
     return { heizenConfig: env.heizenConfig, environmentId: env.id };
   }

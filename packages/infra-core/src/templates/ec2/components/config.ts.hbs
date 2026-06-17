@@ -1,0 +1,29 @@
+// Pulumi config — secrets passed by the worker per deploy. All marked
+// `secret: true` server-side so they're encrypted in stack state.
+//
+// Unlike the Lightsail template, the EC2 box authenticates to ECR via
+// its IAM instance role (no STS creds injected here), and the files are
+// delivered through S3 (see artifacts.ts) rather than baked into
+// user_data — so the only blobs we carry are the app's compose/caddy/env.
+import * as pulumi from "@pulumi/pulumi"
+
+const cfg = new pulumi.Config()
+
+// Base64-encoded blobs (the raw bytes of each file). Decoded into S3
+// objects in artifacts.ts. base64 avoids quoting issues in config.
+export const composeB64    = cfg.requireSecret("composeB64")
+export const caddyfileB64  = cfg.requireSecret("caddyfileB64")
+export const envFileB64    = cfg.requireSecret("envFileB64")
+export const caddyDockerComposeB64 = cfg.requireSecret("caddyDockerComposeB64")
+{{#if lokiLogs}}
+export const alloyDockerComposeB64 = cfg.requireSecret("alloyDockerComposeB64")
+export const alloyConfigB64        = cfg.requireSecret("alloyConfigB64")
+{{/if}}
+
+{{#if hasDatabase}}
+// RDS password — auto-generated once on first deploy, stored encrypted
+// in stack state, reused on subsequent deploys. Pulumi both creates the
+// RDS instance with it (store.ts) and composes DATABASE_URL with it
+// (artifacts.ts).
+export const dbPassword = cfg.requireSecret("dbPassword")
+{{/if}}

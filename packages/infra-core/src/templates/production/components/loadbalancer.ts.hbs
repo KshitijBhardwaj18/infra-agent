@@ -16,6 +16,12 @@ export const alb = new aws.lb.LoadBalancer(`${prefix}-alb`, {
 // ── Target Groups (only for services attached to this ALB) ────────
 {{#each servicesWithAlb}}
 export const {{camel name}}Tg = new aws.lb.TargetGroup(`${prefix}-{{name}}-tg`, {
+  // AWS Target Group names are capped at 32 chars. Pulumi auto-naming
+  // appends a 7-char random suffix to the resource name, which blows
+  // past the limit on stacks with a prefix that's already ~25 chars
+  // (e.g. sre-agent-production-admin-tg-1a2b3c4 = 36 chars).
+  // tgName is precomputed in context.ts as
+  // `${prefix}-${name}-tg`.slice(0, 32) — deterministic + always ≤32.
   name:                "{{tgName}}",
   port:                {{port}},
   protocol:            "HTTP",

@@ -1,0 +1,76 @@
+import * as aws from "@pulumi/aws"
+import * as pulumi from "@pulumi/pulumi"
+import * as cfg from "./config"
+{{#if hasDatabase}}import { db } from "./store"
+{{/if}}{{#if hasStorage}}import { bucket as appBucket } from "./store"
+{{/if}}
+
+const prefix = "{{prefix}}"
+
+// ── Artifacts bucket ──────────────────────────────────────────────────────────
+// Holds the compose/.env/Caddyfile the box syncs at boot and on every
+// in-place update. Pulumi-owned (not worker-uploaded) so the EC2
+// instance can `dependsOn` the objects — guaranteeing they exist before
+// cloud-init runs, and letting Pulumi inject DATABASE_URL (known only at
+// apply time) into the .env. Private, encrypted, versioned, force-destroy.
+export const artifactsBucket = new aws.s3.BucketV2(`${prefix}-artifacts`, {
+  forceDestroy: true,
+  tags: { Name: `${prefix}-artifacts` },
+})
+new aws.s3.BucketVersioningV2(`${prefix}-artifacts-versioning`, {
+  bucket: artifactsBucket.id,
+  versioningConfiguration: { status: "Enabled" },
+})
+new aws.s3.BucketServerSideEncryptionConfigurationV2(`${prefix}-artifacts-encryption`, {
+  bucket: artifactsBucket.id,
+  rules: [{ applyServerSideEncryptionByDefault: { sseAlgorithm: "AES256" } }],
+})
+new aws.s3.BucketPublicAccessBlock(`${prefix}-artifacts-public-access`, {
+  bucket:                artifactsBucket.id,
+  blockPublicAcls:       true,
+  blockPublicPolicy:     true,
+  ignorePublicAcls:      true,
+  restrictPublicBuckets: true,
+})
+
+const decode = (b64: pulumi.Output<string>) =>
+  b64.apply((s) => Buffer.from(s, "base64").toString("utf-8"))
+
+// Final .env = the user's env vars (decoded) PLUS the managed connection
+// strings Pulumi knows only at apply time. Redis is the user's own
+// compose service, so REDIS_URL is never injected.
+// Object form of pulumi.all — named access, so adding/removing a managed
+// value can't silently shift a positional index.
+const envFileContent = pulumi
+  .all({
+    envB64: cfg.envFileB64,
+    {{#if hasDatabase}}dbAddress: db.address,
+    dbPass: cfg.dbPassword,
+    {{/if}}{{#if hasStorage}}bucketName: appBucket.bucket,
+    {{/if}}
+  })
+  .apply((v) => {
+    let env = Buffer.from(v.envB64, "base64").toString("utf-8")
+    if (env.length && !env.endsWith("\n")) env += "\n"
+    {{#if hasDatabase}}env += `DATABASE_URL=postgresql://{{database.dbUser}}:${v.dbPass}@${v.dbAddress}:5432/{{database.dbName}}\n`
+    {{/if}}{{#if hasStorage}}env += `AWS_S3_BUCKET=${v.bucketName}\n`
+    env += `AWS_S3_REGION={{region}}\n`
+    {{/if}}return env
+  })
+
+// Objects under current/ — the stable prefix the box `aws s3 sync`s from.
+function obj(name: string, key: string, content: pulumi.Input<string>) {
+  return new aws.s3.BucketObject(`${prefix}-art-${name}`, {
+    bucket: artifactsBucket.id,
+    key,
+    content,
+    tags: { Name: `${prefix}-art-${name}` },
+  })
+}
+
+export const composeObject = obj("compose", "current/docker-compose.yml", decode(cfg.composeB64))
+export const caddyComposeObject = obj("caddy-compose", "current/docker-compose.caddy.yml", decode(cfg.caddyDockerComposeB64))
+{{#if lokiLogs}}export const alloyComposeObject = obj("alloy-compose", "current/docker-compose.alloy.yml", decode(cfg.alloyDockerComposeB64))
+export const alloyConfigObject = obj("alloy-config", "current/config.alloy", decode(cfg.alloyConfigB64))
+{{/if}}export const caddyfileObject = obj("caddyfile", "current/Caddyfile", decode(cfg.caddyfileB64))
+export const envObject = obj("env", "current/.env", envFileContent)

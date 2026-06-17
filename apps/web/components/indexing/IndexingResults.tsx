@@ -1,15 +1,18 @@
 "use client";
 
-import type { HeizenConfig } from "@heizen/shared";
+import type { HeizenConfig, ParsedCompose } from "@heizen/shared";
 import { Badge } from "@/components/ui/badge";
-import { Server } from "lucide-react";
+import { AlertTriangle, Boxes, Server } from "lucide-react";
 
 interface Props {
   config: HeizenConfig;
   missingEnvCount: number;
+  /** Parsed docker-compose.yml from indexing, when the repo has one.
+   *  Surfaces service/port hints for the Lightsail routing UI. */
+  compose?: ParsedCompose | null;
 }
 
-export function IndexingResults({ config, missingEnvCount }: Props) {
+export function IndexingResults({ config, missingEnvCount, compose }: Props) {
   return (
     <div className="space-y-4">
       <div>
@@ -58,6 +61,81 @@ export function IndexingResults({ config, missingEnvCount }: Props) {
             )}
         </div>
       </div>
+
+      {compose && compose.services.length > 0 && (
+        <div>
+          <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            docker-compose.yml
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Found {compose.services.length} service
+            {compose.services.length === 1 ? "" : "s"} in{" "}
+            <code className="font-mono text-[11px]">{compose.filePath}</code>.
+            Used by the Lightsail (staging) deploy path for routing.
+          </p>
+          <div className="mt-3 space-y-2">
+            {compose.services.map((s) => {
+              const exposedPorts = s.ports.filter((p) => p.host !== null);
+              const internalPorts = s.ports.filter((p) => p.host === null);
+              return (
+                <div
+                  key={s.name}
+                  className="rounded-lg border border-border bg-card p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Boxes size={14} className="text-muted-foreground" />
+                      <p className="text-sm font-mono">{s.name}</p>
+                      {s.hasBuild && (
+                        <Badge variant="outline" className="gap-1">
+                          <AlertTriangle size={11} />
+                          build:
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {exposedPorts.length > 0 ? (
+                        exposedPorts.map((p, i) => (
+                          <Badge key={i} variant="secondary" className="font-mono text-[10px]">
+                            :{p.container}
+                          </Badge>
+                        ))
+                      ) : internalPorts.length > 0 ? (
+                        <span className="text-[10px] text-muted-foreground">
+                          internal
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">
+                          no ports
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {s.image && (
+                    <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                      <code className="font-mono">{s.image}</code>
+                    </p>
+                  )}
+                  {s.envRefs.length > 0 && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Reads:{" "}
+                      {s.envRefs.slice(0, 6).map((ref, i) => (
+                        <span key={ref}>
+                          <code className="font-mono text-[10px]">${ref}</code>
+                          {i < Math.min(s.envRefs.length, 6) - 1 ? ", " : ""}
+                        </span>
+                      ))}
+                      {s.envRefs.length > 6 && (
+                        <span>, +{s.envRefs.length - 6} more</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {missingEnvCount > 0 && (
         <p className="text-sm text-warning-foreground">
